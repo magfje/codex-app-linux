@@ -12,7 +12,7 @@ test("launcher wrapper resolves symlinked entrypoint to sibling binary", async (
   const appDir = path.join(root, "opt", "codex-app-linux-beta");
   const binDir = path.join(root, "usr", "bin");
   const launcherPath = path.join(appDir, "codex-app-linux-beta");
-  const binaryPath = path.join(appDir, "codex-app-linux-beta-bin");
+  const binaryPath = path.join(appDir, "codex-app-linux-beta-real");
   const symlinkPath = path.join(binDir, "codex-app-linux-beta");
   const markerPath = path.join(root, "ran-from-bin");
 
@@ -20,7 +20,7 @@ test("launcher wrapper resolves symlinked entrypoint to sibling binary", async (
   await fs.mkdir(binDir, { recursive: true });
   await fs.writeFile(
     launcherPath,
-    afterPack.wrapperScript("codex-app-linux-beta-bin"),
+    afterPack.wrapperScript("codex-app-linux-beta-real"),
     { mode: 0o755 }
   );
   await fs.writeFile(

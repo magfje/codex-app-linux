@@ -37,13 +37,13 @@ npx codex-app-linux@beta
 AUR:
 
 ```bash
-yay -S codex-app-linux-bin
+yay -S codex-app-unofficial
 ```
 
 Beta AUR:
 
 ```bash
-yay -S codex-app-linux-beta-bin
+yay -S codex-app-beta-unofficial
 ```
 
 ## Requirements
@@ -99,8 +99,8 @@ AUR:
 - publishes binary packages from the same GitHub release tarballs
 - installs the unpacked app into `/opt`
 - installs desktop entry + icon for Arch launchers/menus
-- prod package: `codex-app-linux-bin`
-- beta package: `codex-app-linux-beta-bin`
+- prod package: `codex-app-unofficial`
+- beta package: `codex-app-beta-unofficial`
 
 Launcher behavior:
 
