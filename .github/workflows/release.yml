@@ -176,7 +176,19 @@ jobs:
           install -dm700 ~/.ssh
           printf '%s\n' "${AUR_SSH_PRIVATE_KEY}" > ~/.ssh/aur
           chmod 600 ~/.ssh/aur
-          ssh-keyscan aur.archlinux.org >> ~/.ssh/known_hosts
+          touch ~/.ssh/known_hosts
+          for attempt in 1 2 3 4 5; do
+            if ssh-keyscan aur.archlinux.org >> ~/.ssh/known_hosts 2>/dev/null; then
+              break
+            fi
+
+            if [ "$attempt" -eq 5 ]; then
+              echo "Failed to fetch AUR host key"
+              exit 1
+            fi
+
+            sleep 2
+          done
 
           export GIT_SSH_COMMAND="ssh -i ~/.ssh/aur -o IdentitiesOnly=yes"
           git clone "ssh://aur@aur.archlinux.org/${{ steps.meta.outputs.aur_package_name }}.git" aur-prod
@@ -330,7 +342,19 @@ jobs:
           install -dm700 ~/.ssh
           printf '%s\n' "${AUR_SSH_PRIVATE_KEY}" > ~/.ssh/aur
           chmod 600 ~/.ssh/aur
-          ssh-keyscan aur.archlinux.org >> ~/.ssh/known_hosts
+          touch ~/.ssh/known_hosts
+          for attempt in 1 2 3 4 5; do
+            if ssh-keyscan aur.archlinux.org >> ~/.ssh/known_hosts 2>/dev/null; then
+              break
+            fi
+
+            if [ "$attempt" -eq 5 ]; then
+              echo "Failed to fetch AUR host key"
+              exit 1
+            fi
+
+            sleep 2
+          done
 
           export GIT_SSH_COMMAND="ssh -i ~/.ssh/aur -o IdentitiesOnly=yes"
           git clone "ssh://aur@aur.archlinux.org/${{ steps.meta.outputs.aur_package_name }}.git" aur-beta
