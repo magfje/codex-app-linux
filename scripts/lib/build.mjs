@@ -407,47 +407,31 @@ async function assembleNpmPackage({
 }) {
   const packageDir = path.join(targetDir, "package");
   const binDir = path.join(packageDir, "bin");
+  const runtimeDir = path.join(packageDir, "runtime");
 
   await ensureEmptyDir(packageDir);
   await ensureDir(binDir);
+  await copyRecursive(path.join(projectRoot, "runtime"), runtimeDir);
 
-  const packageJson = {
-    name: packageName,
-    version: packageVersion,
-    private: false,
-    description: `${channel.displayName} launcher for the Codex Linux desktop app. Requires an existing codex CLI on PATH.`,
-    license: "UNLICENSED",
-    os: ["linux"],
-    cpu: ["x64"],
-    bin: {
-      [launcherCommand]: "bin/codex-app-linux.cjs"
-    },
-    files: ["bin", "README.md", "package.json"],
-    repository: {
-      type: "git",
-      url: `git+https://github.com/${releaseRepo}.git`
-    },
-    codexAppLinux: {
-      channel: channel.name,
-      releaseRepo,
-      releaseTag,
-      executableName,
-      unpackedTarballAssetName,
-      unpackedTarballSha256
-    },
-    publishConfig: {
-      access: "public",
-      tag: channel.distTag
-    }
-  };
+  const packageJson = createRuntimePackageManifest({
+    channel,
+    packageName,
+    packageVersion,
+    launcherCommand,
+    releaseRepo,
+    releaseTag,
+    executableName,
+    unpackedTarballAssetName,
+    unpackedTarballSha256
+  });
 
   await fs.writeFile(
     path.join(packageDir, "package.json"),
     `${JSON.stringify(packageJson, null, 2)}\n`
   );
   await fs.writeFile(
-    path.join(binDir, "codex-app-linux.cjs"),
-    launcherScript(launcherCommand),
+    path.join(binDir, "codex-app-linux.mjs"),
+    launcherScript(),
     { mode: 0o755 }
   );
   await fs.writeFile(
@@ -467,174 +451,59 @@ async function assembleNpmPackage({
   return packageDir;
 }
 
-function launcherScript(launcherCommand) {
+export function createRuntimePackageManifest({
+  channel,
+  packageName,
+  packageVersion,
+  launcherCommand,
+  releaseRepo,
+  releaseTag,
+  executableName,
+  unpackedTarballAssetName,
+  unpackedTarballSha256
+}) {
+  return {
+    name: packageName,
+    version: packageVersion,
+    private: false,
+    type: "module",
+    description: `${channel.displayName} launcher for the Codex Linux desktop app. Requires an existing codex CLI on PATH.`,
+    license: "UNLICENSED",
+    os: ["linux"],
+    cpu: ["x64"],
+    engines: {
+      node: ">=20"
+    },
+    bin: {
+      [launcherCommand]: "bin/codex-app-linux.mjs"
+    },
+    files: ["bin", "runtime", "README.md", "package.json"],
+    dependencies: {
+      "@electron/asar": "^4.1.0",
+      ws: "^8.20.0"
+    },
+    repository: {
+      type: "git",
+      url: `git+https://github.com/${releaseRepo}.git`
+    },
+    codexAppLinux: {
+      channel: channel.name,
+      releaseRepo,
+      releaseTag,
+      executableName,
+      unpackedTarballAssetName,
+      unpackedTarballSha256
+    },
+    publishConfig: {
+      access: "public",
+      tag: channel.distTag
+    }
+  };
+}
+
+function launcherScript() {
   return `#!/usr/bin/env node
-const crypto = require("node:crypto");
-const fs = require("node:fs");
-const fsp = require("node:fs/promises");
-const os = require("node:os");
-const path = require("node:path");
-const { spawn, spawnSync } = require("node:child_process");
-const { pipeline } = require("node:stream/promises");
-
-const packageJson = require("../package.json");
-const metadata = packageJson.codexAppLinux;
-
-main().catch(error => {
-  console.error("codex-app-linux:", error instanceof Error ? error.message : String(error));
-  process.exit(1);
-});
-
-async function main() {
-  const resolvedCodex = resolveCodexCliPath();
-
-  if (!resolvedCodex) {
-    console.error("codex-app-linux: CODEX_CLI_PATH is not set and 'which codex' returned nothing.");
-    console.error("Set CODEX_CLI_PATH explicitly or install 'codex' on PATH.");
-    process.exit(1);
-  }
-
-  const binaryPath = await resolveBinaryPath();
-  const child = spawn(binaryPath, process.argv.slice(2), {
-    stdio: "inherit",
-    env: {
-      ...process.env,
-      CODEX_CLI_PATH: resolvedCodex
-    }
-  });
-
-  child.on("exit", (code, signal) => {
-    if (signal) {
-      process.kill(process.pid, signal);
-      return;
-    }
-
-    process.exit(code ?? 0);
-  });
-}
-
-function resolveCodexCliPath() {
-  if (isExecutable(process.env.CODEX_CLI_PATH)) {
-    return process.env.CODEX_CLI_PATH;
-  }
-
-  const result = spawnSync("which", ["codex"], {
-    encoding: "utf8"
-  });
-  const candidate = result.status === 0 ? result.stdout.trim() : "";
-
-  if (isExecutable(candidate)) {
-    return candidate;
-  }
-
-  return null;
-}
-
-async function resolveBinaryPath() {
-  const overridePath = process.env.CODEX_APP_LINUX_BINARY_PATH;
-
-  if (isExecutable(overridePath)) {
-    return overridePath;
-  }
-
-  const cacheRoot =
-    process.env.CODEX_APP_LINUX_CACHE_DIR ||
-    process.env.XDG_CACHE_HOME ||
-    path.join(os.homedir(), ".cache");
-  const cacheDir = path.join(cacheRoot, packageJson.name, packageJson.version);
-  const archivePath = path.join(cacheDir, metadata.unpackedTarballAssetName);
-  const extractRoot = path.join(cacheDir, "linux-unpacked");
-  const binaryPath = path.join(extractRoot, metadata.executableName);
-
-  await fsp.mkdir(cacheDir, { recursive: true });
-
-  if (
-    isExecutable(binaryPath) &&
-    (await matchesChecksum(archivePath, metadata.unpackedTarballSha256))
-  ) {
-    return binaryPath;
-  }
-
-  const downloadUrl = process.env.CODEX_APP_LINUX_RELEASE_BASE_URL
-    ? joinUrl(process.env.CODEX_APP_LINUX_RELEASE_BASE_URL, metadata.unpackedTarballAssetName)
-    : \`https://github.com/\${metadata.releaseRepo}/releases/download/\${metadata.releaseTag}/\${metadata.unpackedTarballAssetName}\`;
-
-  console.error(\`codex-app-linux: downloading \${metadata.unpackedTarballAssetName}\`);
-
-  const tempPath = \`\${archivePath}.download\`;
-  const response = await fetch(downloadUrl);
-
-  if (!response.ok || !response.body) {
-    throw new Error(\`failed to download desktop binary archive: \${response.status} \${response.statusText}\`);
-  }
-
-  await pipeline(response.body, fs.createWriteStream(tempPath));
-
-  if (!(await matchesChecksum(tempPath, metadata.unpackedTarballSha256))) {
-    await fsp.rm(tempPath, { force: true });
-    throw new Error("downloaded desktop binary archive checksum mismatch");
-  }
-
-  await fsp.rename(tempPath, archivePath);
-  await fsp.rm(extractRoot, { recursive: true, force: true });
-  await extractTarball(archivePath, cacheDir);
-
-  if (!isExecutable(binaryPath)) {
-    throw new Error(\`downloaded archive did not contain executable \${metadata.executableName}\`);
-  }
-
-  return binaryPath;
-}
-
-async function matchesChecksum(filePath, expected) {
-  if (!expected) {
-    return isExecutable(filePath);
-  }
-
-  try {
-    const hash = crypto.createHash("sha256");
-    const file = await fsp.readFile(filePath);
-    hash.update(file);
-    return hash.digest("hex") === expected;
-  } catch {
-    return false;
-  }
-}
-
-function isExecutable(candidate) {
-  if (!candidate) {
-    return false;
-  }
-
-  try {
-    fs.accessSync(candidate, fs.constants.X_OK);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-function joinUrl(base, assetName) {
-  return \`\${String(base).replace(/\\/$/, "")}/\${assetName}\`;
-}
-
-async function extractTarball(archivePath, targetDir) {
-  await new Promise((resolve, reject) => {
-    const child = spawn("tar", ["-xzf", archivePath, "-C", targetDir], {
-      stdio: "inherit"
-    });
-
-    child.on("error", reject);
-    child.on("exit", code => {
-      if (code === 0) {
-        resolve();
-        return;
-      }
-
-      reject(new Error(\`tar extraction failed: \${code}\`));
-    });
-  });
-}
+import "../runtime/launcher.mjs";
 `;
 }
 
@@ -667,6 +536,14 @@ Thin launcher for the Codex Linux desktop app.
 3. downloads the Linux unpacked binary archive from GitHub Releases into cache on first run
 4. extracts \`linux-unpacked\`
 5. launches the packaged executable with \`CODEX_CLI_PATH\` exported
+
+## Browser Mode
+
+Serve the bundled Codex UI in your browser:
+
+\`\`\`bash
+${launcherCommand} web --open
+\`\`\`
 
 ## Usage
 

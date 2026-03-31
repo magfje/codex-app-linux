@@ -23,6 +23,12 @@ Run once with `npx`:
 npx codex-app-linux
 ```
 
+Browser mode from npm:
+
+```bash
+npx codex-app-linux web --open
+```
+
 Beta channel:
 
 ```bash
@@ -109,7 +115,9 @@ Launcher behavior:
 - errors if neither is available
 - extracts `linux-unpacked` into cache on first run
 - npm launches the unpacked binary directly
+- npm also exposes `codex-app-linux web` to serve the bundled UI in a browser
 - AppImage and `linux-unpacked` release binaries also perform the same `codex` lookup at launch
+- browser mode is npm-only; AUR packages continue to ship desktop launch behavior only
 
 ## GitHub Actions
 
