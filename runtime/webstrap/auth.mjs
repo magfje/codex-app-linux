@@ -105,7 +105,24 @@ export class SessionStore {
   }
 }
 
-export function createAuthController({ token, sessionStore, cookieName = SESSION_COOKIE_NAME }) {
+export function createAuthController({ token, sessionStore, cookieName = SESSION_COOKIE_NAME, disabled = false }) {
+  if (disabled) {
+    return {
+      cookieName,
+      isAuthorizedRequest() {
+        return true;
+      },
+      requireAuth() {
+        return true;
+      },
+      handleAuthRoute(_req, res) {
+        res.statusCode = 302;
+        res.setHeader("location", "/");
+        res.end();
+      }
+    };
+  }
+
   function hasValidSession(req) {
     const cookies = parseCookies(req.headers.cookie || "");
     return sessionStore.isValid(cookies[cookieName]);

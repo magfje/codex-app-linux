@@ -42,7 +42,7 @@ if (argv[0] === "web") {
 function printUsage() {
   process.stdout.write(`Usage:\n`);
   process.stdout.write(`  codex-app-linux [desktop-args...]\n`);
-  process.stdout.write(`  codex-app-linux web [--port <n>] [--bind <ip>] [--open] [--token-file <path>] [--codex-app <path>]\n`);
+  process.stdout.write(`  codex-app-linux web [--port <n>] [--bind <ip>] [--open] [--token-file <path>] [--codex-app <path>] [--dangerously-disable-auth <true|false>]\n`);
 }
 
 async function launchDesktop(args) {

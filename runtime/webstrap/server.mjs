@@ -36,14 +36,34 @@ import {
 
 const logger = createLogger("web-server");
 
-function parseConfig(argv = process.argv.slice(2), env = process.env) {
+function parseBooleanFlag(value, fallback = false) {
+  if (typeof value === "boolean") {
+    return value;
+  }
+
+  if (typeof value !== "string") {
+    return fallback;
+  }
+
+  const normalized = value.trim().toLowerCase();
+  if (normalized === "true" || normalized === "1" || normalized === "yes" || normalized === "on") {
+    return true;
+  }
+  if (normalized === "false" || normalized === "0" || normalized === "no" || normalized === "off") {
+    return false;
+  }
+  return fallback;
+}
+
+export function parseConfig(argv = process.argv.slice(2), env = process.env) {
   const config = {
     port: Number(env.CODEX_APP_LINUX_WEB_PORT || 8080),
     bind: env.CODEX_APP_LINUX_WEB_BIND || "127.0.0.1",
     tokenFile: env.CODEX_APP_LINUX_WEB_TOKEN_FILE || defaultTokenFilePath(),
     codexAppPath: env.CODEX_APP_LINUX_WEB_APP_PATH || "",
     internalWsPort: Number(env.CODEX_APP_LINUX_WEB_INTERNAL_WS_PORT || 38080),
-    autoOpen: env.CODEX_APP_LINUX_WEB_OPEN === "1"
+    autoOpen: env.CODEX_APP_LINUX_WEB_OPEN === "1",
+    dangerouslyDisableAuth: parseBooleanFlag(env.CODEX_APP_LINUX_WEB_DANGEROUSLY_DISABLE_AUTH, false)
   };
 
   for (let i = 0; i < argv.length; i += 1) {
@@ -60,6 +80,9 @@ function parseConfig(argv = process.argv.slice(2), env = process.env) {
         break;
       case "--codex-app":
         config.codexAppPath = argv[++i];
+        break;
+      case "--dangerously-disable-auth":
+        config.dangerouslyDisableAuth = parseBooleanFlag(argv[++i], true);
         break;
       case "--open":
         config.autoOpen = true;
@@ -78,7 +101,7 @@ function parseConfig(argv = process.argv.slice(2), env = process.env) {
 }
 
 function printUsage() {
-  process.stdout.write(`Usage: codex-app-linux web [--port <n>] [--bind <ip>] [--open] [--token-file <path>] [--codex-app <path>]\n`);
+  process.stdout.write(`Usage: codex-app-linux web [--port <n>] [--bind <ip>] [--open] [--token-file <path>] [--codex-app <path>] [--dangerously-disable-auth <true|false>]\n`);
 }
 
 function sendJson(res, statusCode, body) {
@@ -113,10 +136,19 @@ function maybeOpenBrowser(url) {
 
 async function main() {
   const config = parseConfig();
-  const tokenResult = await ensurePersistentToken(config.tokenFile);
-  const runtimeMetadataPath = `${tokenResult.tokenFilePath}.runtime`;
+  const tokenResult = config.dangerouslyDisableAuth
+    ? {
+        token: null,
+        tokenFilePath: null
+      }
+    : await ensurePersistentToken(config.tokenFile);
+  const runtimeMetadataPath = `${path.resolve(config.tokenFile)}.runtime`;
   const sessionStore = new SessionStore({ ttlMs: 1000 * 60 * 60 * 12 });
-  const auth = createAuthController({ token: tokenResult.token, sessionStore });
+  const auth = createAuthController({
+    token: tokenResult.token,
+    sessionStore,
+    disabled: config.dangerouslyDisableAuth
+  });
   const packageData = config.codexAppPath ? null : await tryReadInstalledPackage();
 
   let codexPaths;
@@ -228,7 +260,8 @@ async function main() {
           ok: true,
           appServer: appServer.getState(),
           udsReady: udsClient.isReady(),
-          build: build.buildKey
+          build: build.buildKey,
+          authDisabled: config.dangerouslyDisableAuth
         });
         return;
       }
@@ -340,6 +373,7 @@ async function main() {
         bind: config.bind,
         port: config.port,
         tokenFile: tokenResult.tokenFilePath,
+        authDisabled: config.dangerouslyDisableAuth,
         pid: process.pid,
         startedAt: Date.now()
       }) + "\n",
@@ -352,22 +386,35 @@ async function main() {
     });
   }
 
-  const authUrl = `http://${config.bind}:${config.port}/__webstrapper/auth?token=${encodeURIComponent(tokenResult.token)}`;
-  const authHint = `http://${config.bind}:${config.port}/__webstrapper/auth?token=<redacted>`;
-  const loginCommand = `xdg-open "${authUrl}"`;
+  const publicUrl = `http://${config.bind}:${config.port}/`;
+  const authUrl = config.dangerouslyDisableAuth
+    ? publicUrl
+    : `http://${config.bind}:${config.port}/__webstrapper/auth?token=${encodeURIComponent(tokenResult.token)}`;
+  const authHint = config.dangerouslyDisableAuth
+    ? "DISABLED"
+    : `http://${config.bind}:${config.port}/__webstrapper/auth?token=<redacted>`;
+  const loginCommand = config.dangerouslyDisableAuth
+    ? "none"
+    : `xdg-open "${authUrl}"`;
 
   logger.info("codex-app-linux web started", {
     bind: config.bind,
     port: config.port,
     buildKey: build.buildKey,
+    authDisabled: config.dangerouslyDisableAuth,
     tokenFilePath: tokenResult.tokenFilePath,
     authHint
   });
 
-  process.stdout.write(`\nCodex App Linux Web listening on http://${config.bind}:${config.port}\n`);
-  process.stdout.write(`Token file: ${tokenResult.tokenFilePath}\n`);
-  process.stdout.write(`Auth URL pattern: ${authHint}\n`);
-  process.stdout.write(`Local login command: ${loginCommand}\n\n`);
+  process.stdout.write(`\nCodex App Linux Web listening on ${publicUrl}\n`);
+  if (config.dangerouslyDisableAuth) {
+    process.stdout.write(`Authentication: DISABLED via --dangerously-disable-auth\n`);
+  } else {
+    process.stdout.write(`Token file: ${tokenResult.tokenFilePath}\n`);
+    process.stdout.write(`Auth URL pattern: ${authHint}\n`);
+    process.stdout.write(`Local login command: ${loginCommand}\n`);
+  }
+  process.stdout.write(`\n`);
 
   if (config.autoOpen && !maybeOpenBrowser(authUrl)) {
     process.stdout.write(`${authUrl}\n`);
@@ -423,7 +470,11 @@ async function main() {
   });
 }
 
-main().catch(error => {
-  logger.error("Fatal startup error", { error: toErrorMessage(error) });
-  process.exit(1);
-});
+const isDirectRun = process.argv[1] != null && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+
+if (isDirectRun) {
+  main().catch(error => {
+    logger.error("Fatal startup error", { error: toErrorMessage(error) });
+    process.exit(1);
+  });
+}

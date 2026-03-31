@@ -29,6 +29,12 @@ Browser mode from npm:
 npx codex-app-linux web --open
 ```
 
+Disable browser auth entirely (unsafe; only behind a trusted reverse proxy / tailnet):
+
+```bash
+npx codex-app-linux web --dangerously-disable-auth true
+```
+
 Beta channel:
 
 ```bash
@@ -116,6 +122,7 @@ Launcher behavior:
 - extracts `linux-unpacked` into cache on first run
 - npm launches the unpacked binary directly
 - npm also exposes `codex-app-linux web` to serve the bundled UI in a browser
+- browser auth can be disabled explicitly with `--dangerously-disable-auth true`
 - AppImage and `linux-unpacked` release binaries also perform the same `codex` lookup at launch
 - browser mode is npm-only; AUR packages continue to ship desktop launch behavior only
 
