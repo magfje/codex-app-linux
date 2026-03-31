@@ -26,6 +26,11 @@ const CONTENT_TYPES = {
   ".js.map": "application/json; charset=utf-8"
 };
 
+const STATSIG_BLOCKING_INIT_SNIPPET =
+  "[a,o]=(0,t.useState)(i.loadingStatus!==`Ready`)";
+const STATSIG_NON_BLOCKING_INIT_SNIPPET =
+  "[a,o]=(0,t.useState)(!1)";
+
 export function defaultCacheRoot() {
   return path.join(os.homedir(), ".cache", "codex-app-linux", "web-assets");
 }
@@ -97,6 +102,29 @@ export async function readBuildMetadata(paths, fallback = {}) {
   const buildKey = buildKeySource.replace(/[^a-zA-Z0-9._-]/g, "_");
 
   return { bundleVersion, shortVersion, buildNumber, buildFlavor, buildKey };
+}
+
+export async function readExtractedBuildMetadata(outputDir, fallback = {}) {
+  let shortVersion = fallback.shortVersion || "unknown";
+  let buildNumber = fallback.buildNumber || "unknown";
+  let buildFlavor = fallback.buildFlavor || "prod";
+
+  try {
+    const packageJson = JSON.parse(
+      await fsp.readFile(path.join(outputDir, "package.json"), "utf8")
+    );
+    shortVersion = packageJson.version || shortVersion;
+    buildNumber = String(packageJson.codexBuildNumber || packageJson.buildNumber || buildNumber);
+    buildFlavor = packageJson.codexBuildFlavor || packageJson.buildFlavor || buildFlavor;
+  } catch {
+    // optional
+  }
+
+  const bundleVersion = fallback.bundleVersion || buildNumber;
+  const buildKeySource = fallback.buildKey || `${shortVersion}-${buildNumber}`;
+  const buildKey = buildKeySource.replace(/[^a-zA-Z0-9._-]/g, "_");
+
+  return { shortVersion, buildNumber, buildFlavor, bundleVersion, buildKey };
 }
 
 async function runAsarCliExtract(asarPath, outputPath) {
@@ -216,6 +244,18 @@ export async function buildPatchedIndexHtml(indexPath) {
   return `${shimTag}\n${html}`;
 }
 
+export function patchStatsigChunkSource(source) {
+  if (typeof source !== "string") {
+    return source;
+  }
+
+  if (!source.includes(STATSIG_BLOCKING_INIT_SNIPPET)) {
+    return source;
+  }
+
+  return source.replace(STATSIG_BLOCKING_INIT_SNIPPET, STATSIG_NON_BLOCKING_INIT_SNIPPET);
+}
+
 export async function readStaticFile(webRoot, requestPath) {
   const normalized = requestPath === "/" ? "/index.html" : requestPath;
   const filePath = safePathJoin(webRoot, normalized);
@@ -232,7 +272,12 @@ export async function readStaticFile(webRoot, requestPath) {
   const contentType = CONTENT_TYPES[ext] || "application/octet-stream";
 
   try {
-    const body = await fsp.readFile(filePath);
+    let body = await fsp.readFile(filePath);
+
+    if (path.basename(filePath).startsWith("statsig-") && filePath.endsWith(".js")) {
+      body = Buffer.from(patchStatsigChunkSource(body.toString("utf8")));
+    }
+
     return { body, contentType };
   } catch (error) {
     throw new Error(`Failed reading asset ${filePath}: ${toErrorMessage(error)}`);

@@ -16,6 +16,7 @@ import {
   buildPatchedIndexHtml,
   ensureCodexAppExists,
   ensureExtractedAssets,
+  readExtractedBuildMetadata,
   readBuildMetadata,
   readStaticFile,
   resolveCodexAppPaths
@@ -146,7 +147,7 @@ async function main() {
   }
 
   await ensureCodexAppExists(codexPaths);
-  const build = await readBuildMetadata(codexPaths, {
+  const initialBuild = await readBuildMetadata(codexPaths, {
     shortVersion: packageData?.packageJson?.version,
     bundleVersion: packageData?.metadata?.releaseTag,
     buildNumber: packageData?.metadata?.releaseTag,
@@ -167,9 +168,10 @@ async function main() {
 
   const assetBundle = await ensureExtractedAssets({
     asarPath: codexPaths.asarPath,
-    buildKey: build.buildKey,
+    buildKey: initialBuild.buildKey,
     logger
   });
+  const build = await readExtractedBuildMetadata(assetBundle.outputDir, initialBuild);
   const patchedIndexHtml = await buildPatchedIndexHtml(assetBundle.indexPath);
 
   const codexCliPath = resolveCodexCliPath({
@@ -201,6 +203,12 @@ async function main() {
       id: "local",
       display_name: "Codex",
       kind: "local"
+    },
+    extensionInfo: {
+      name: "codex-webstrapper",
+      version: build.shortVersion,
+      platform: process.platform,
+      uiKind: "desktop"
     },
     workerPath: assetBundle.workerPath,
     logger: createLogger("router")

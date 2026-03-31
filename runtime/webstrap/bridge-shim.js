@@ -5,6 +5,7 @@
   const queuedEnvelopes = [];
   const workerSubscribers = new Map();
   const mainMessageHistory = [];
+  const sentEnvelopeHistory = [];
   const CONTEXT_MENU_ROOT_ID = "__codex-webstrap-context-menu-root";
   const CONTEXT_MENU_STYLE_ID = "__codex-webstrap-context-menu-style";
   const MOBILE_STYLE_ID = "__codex-webstrap-mobile-style";
@@ -733,6 +734,17 @@
   }
 
   function sendEnvelope(envelope) {
+    const record = {
+      ts: Date.now(),
+      type: envelope?.type || null,
+      payload: envelope?.payload ?? null
+    };
+    sentEnvelopeHistory.push(record);
+    if (sentEnvelopeHistory.length > 200) {
+      sentEnvelopeHistory.shift();
+    }
+    window.__codexWebstrapSentEnvelopes = sentEnvelopeHistory;
+
     if (connected && ws && ws.readyState === WebSocket.OPEN) {
       ws.send(JSON.stringify(envelope));
       return;

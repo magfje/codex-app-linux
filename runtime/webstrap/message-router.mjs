@@ -72,6 +72,20 @@ const IPC_BROADCAST_FORWARD_METHODS = new Set([
   "workspace-root-options-updated"
 ]);
 
+const DEFAULT_CONFIGURATION_VALUES = Object.freeze({
+  appearanceTheme: "system",
+  appearanceLightCodeThemeId: "codex",
+  appearanceDarkCodeThemeId: "codex"
+});
+
+const DEFAULT_EXPERIMENTAL_FEATURE_ENABLEMENT = Object.freeze({
+  apps: true,
+  plugins: true,
+  tool_call_mcp_elicitation: true,
+  tool_search: true,
+  tool_suggest: false
+});
+
 class TerminalRegistry {
   constructor(sendToWs, logger) {
     this.sendToWs = sendToWs;
@@ -776,7 +790,7 @@ class GitWorkerBridge {
 }
 
 export class MessageRouter {
-  constructor({ appServer, udsClient, workerPath, hostConfig, logger, globalStatePath }) {
+  constructor({ appServer, udsClient, workerPath, hostConfig, logger, globalStatePath, extensionInfo }) {
     this.logger = logger || createLogger("router");
     this.appServer = appServer;
     this.udsClient = udsClient;
@@ -784,6 +798,12 @@ export class MessageRouter {
       id: "local",
       display_name: "Codex",
       kind: "local"
+    };
+    this.extensionInfo = extensionInfo || {
+      name: "codex-webstrapper",
+      version: "0.1.0",
+      platform: process.platform,
+      uiKind: "desktop"
     };
 
     this.clients = new Set();
@@ -1144,6 +1164,9 @@ export class MessageRouter {
           return;
         case "electron-set-badge-count":
         case "power-save-blocker-set":
+        case "hotkey-window-enabled-changed":
+        case "heartbeat-automations-enabled-changed":
+        case "electron-desktop-features-changed":
         case "desktop-notification-show":
         case "desktop-notification-hide":
         case "show-context-menu":
@@ -1713,12 +1736,7 @@ export class MessageRouter {
           payload = { ok: true };
           break;
         case "extension-info":
-          payload = {
-            name: "codex-webstrapper",
-            version: "0.1.0",
-            platform: process.platform,
-            uiKind: "desktop"
-          };
+          payload = this.extensionInfo;
           break;
         case "is-copilot-api-available":
           payload = { isAvailable: false };
@@ -1838,7 +1856,7 @@ export class MessageRouter {
           payload = { ideLocale: null, systemLocale: null };
           break;
         case "get-configuration":
-          payload = { value: null };
+          payload = { value: this._resolveConfigurationValue(params?.key) };
           break;
         case "set-configuration":
           payload = { ok: true };
@@ -2714,6 +2732,10 @@ export class MessageRouter {
   }
 
   async _forwardToAppServer(ws, payload) {
+    if (this._handleVirtualMcpRequest(ws, payload)) {
+      return;
+    }
+
     if (!this.appServer) {
       this.sendBridgeError(ws, "app_server_unavailable", "App-server backend is unavailable.");
       return;
@@ -2723,7 +2745,31 @@ export class MessageRouter {
       id: payload?.id ?? null,
       method: payload?.method ?? null
     });
-    const response = await this.appServer.sendRaw(payload);
+    let response;
+    try {
+      response = await this.appServer.sendRaw(payload);
+    } catch (error) {
+      if (payload?.id != null) {
+        this.logger.warn("mcp-forward-response-error", {
+          id: payload.id,
+          method: payload?.method ?? null,
+          error: toErrorMessage(error)
+        });
+        this.sendMainMessage(ws, {
+          type: "mcp-response",
+          message: {
+            id: payload.id,
+            result: null,
+            error: {
+              message: toErrorMessage(error),
+              code: typeof error?.code === "number" ? error.code : -32000
+            }
+          }
+        });
+        return;
+      }
+      throw error;
+    }
 
     if (payload?.method === "account/read" && response?.result) {
       this.lastAccountRead = response.result;
@@ -2748,6 +2794,53 @@ export class MessageRouter {
         }
       });
     }
+  }
+
+  _handleVirtualMcpRequest(ws, payload) {
+    if (payload == null || typeof payload !== "object") {
+      return false;
+    }
+
+    if (payload.method === "experimentalFeature/enablement/set") {
+      this.sendMainMessage(ws, {
+        type: "mcp-response",
+        message: {
+          id: payload.id,
+          result: {
+            enablement: {
+              ...DEFAULT_EXPERIMENTAL_FEATURE_ENABLEMENT,
+              ...(payload.params?.enablement ?? {})
+            }
+          },
+          error: null
+        }
+      });
+      return true;
+    }
+
+    if (payload.method === "experimentalFeature/enablement/read") {
+      this.sendMainMessage(ws, {
+        type: "mcp-response",
+        message: {
+          id: payload.id,
+          result: {
+            enablement: DEFAULT_EXPERIMENTAL_FEATURE_ENABLEMENT
+          },
+          error: null
+        }
+      });
+      return true;
+    }
+
+    return false;
+  }
+
+  _resolveConfigurationValue(key) {
+    if (typeof key !== "string") {
+      return null;
+    }
+
+    return DEFAULT_CONFIGURATION_VALUES[key] ?? null;
   }
 
   _normalizeWorkspaceRoot(root) {
@@ -3228,9 +3321,17 @@ export class MessageRouter {
   }
 
   sendMainMessage(ws, payload) {
+    const payloadWithHostId =
+      payload && typeof payload === "object" && !Array.isArray(payload)
+        ? {
+            hostId: payload.hostId ?? this.hostConfig.id,
+            ...payload
+          }
+        : payload;
+
     this.sendBridgeEnvelope(ws, {
       type: "main-message",
-      payload
+      payload: payloadWithHostId
     });
   }
 
