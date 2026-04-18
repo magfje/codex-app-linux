@@ -289,6 +289,17 @@ test("MessageRouter provides browser-safe virtual fetch defaults", async () => {
     })
   });
 
+  await router._handleVirtualFetch(ws, "req-7", {
+    requestId: "req-7",
+    method: "POST",
+    url: "vscode://codex/workspace-directory-entries",
+    body: JSON.stringify({
+      params: {
+        workspaceRoot: "/tmp/project"
+      }
+    })
+  });
+
   assert.equal(JSON.parse(sent[0].payload.bodyJsonString).agents.length, 0);
   assert.deepEqual(JSON.parse(sent[1].payload.bodyJsonString).state, {
     supported: false,
@@ -304,6 +315,9 @@ test("MessageRouter provides browser-safe virtual fetch defaults", async () => {
   assert.equal(sent[3].payload.status, 202);
   assert.deepEqual(JSON.parse(sent[3].payload.bodyJsonString), {
     success: true
+  });
+  assert.deepEqual(JSON.parse(sent[4].payload.bodyJsonString), {
+    entries: []
   });
 
   router.dispose();

@@ -1816,6 +1816,9 @@ export class MessageRouter {
         case "workspace-root-options":
           payload = this.workspaceRootOptions;
           break;
+        case "workspace-directory-entries":
+          payload = { entries: [] };
+          break;
         case "git-origins": {
           const dirs = Array.isArray(params?.dirs) ? params.dirs.filter((dir) => typeof dir === "string" && dir.length > 0) : [];
           payload = {
