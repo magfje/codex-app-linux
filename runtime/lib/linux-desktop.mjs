@@ -8,7 +8,11 @@ import { createWriteStream } from "node:fs";
 import { pipeline } from "node:stream/promises";
 import { fileURLToPath } from "node:url";
 
-export function defaultPackageRoot() {
+export function defaultPackageRoot(env = process.env) {
+  if (env.CODEX_APP_LINUX_PACKAGE_ROOT) {
+    return path.resolve(env.CODEX_APP_LINUX_PACKAGE_ROOT);
+  }
+
   return path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 }
 

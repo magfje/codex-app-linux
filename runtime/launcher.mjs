@@ -15,34 +15,46 @@ if (argv[0] === "--help" || argv[0] === "-h" || argv[0] === "help") {
   process.exit(0);
 }
 
-if (argv[0] === "web") {
-  const serverPath = fileURLToPath(new URL("./webstrap/server.mjs", import.meta.url));
-  const child = spawn(process.execPath, [serverPath, ...argv.slice(1)], {
-    stdio: "inherit",
-    env: process.env
-  });
+main().catch(error => {
+  process.stderr.write(`codex-app-linux: ${error instanceof Error ? error.message : String(error)}\n`);
+  process.exit(1);
+});
 
-  child.on("exit", (code, signal) => {
-    if (signal) {
-      process.kill(process.pid, signal);
-      return;
-    }
+async function main() {
+  if (argv[0] === "--version" || argv[0] === "-v" || argv[0] === "version") {
+    const packageData = await readInstalledPackage();
+    process.stdout.write(`${packageData.packageJson.version}\n`);
+    return;
+  }
 
-    process.exit(code ?? 0);
-  });
+  if (argv[0] === "web") {
+    const serverPath = fileURLToPath(new URL("./webstrap/server.mjs", import.meta.url));
+    const child = spawn(process.execPath, [serverPath, ...argv.slice(1)], {
+      stdio: "inherit",
+      env: process.env
+    });
 
-  process.exitCode = 0;
-} else {
-  launchDesktop(argv).catch(error => {
-    process.stderr.write(`codex-app-linux: ${error instanceof Error ? error.message : String(error)}\n`);
-    process.exit(1);
-  });
+    child.on("exit", (code, signal) => {
+      if (signal) {
+        process.kill(process.pid, signal);
+        return;
+      }
+
+      process.exit(code ?? 0);
+    });
+
+    process.exitCode = 0;
+    return;
+  }
+
+  await launchDesktop(argv);
 }
 
 function printUsage() {
   process.stdout.write(`Usage:\n`);
   process.stdout.write(`  codex-app-linux [desktop-args...]\n`);
   process.stdout.write(`  codex-app-linux web [--port <n>] [--bind <ip>] [--open] [--token-file <path>] [--codex-app <path>] [--dangerously-disable-auth <true|false>]\n`);
+  process.stdout.write(`  codex-app-linux --version\n`);
 }
 
 async function launchDesktop(args) {
