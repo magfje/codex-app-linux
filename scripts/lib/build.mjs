@@ -17,6 +17,18 @@ import {
 } from "./config.mjs";
 import { writeAurPackage } from "./aur.mjs";
 
+const skippedLinuxResourceNames = new Set([
+  "app.asar",
+  "app.asar.unpacked",
+  "codex",
+  "codex_chronicle",
+  "native",
+  "node",
+  "node_repl",
+  "rg"
+]);
+const skippedBundledPluginNames = new Set(["computer-use", "latex-tectonic"]);
+
 export async function buildChannel({
   channel,
   upstream,
@@ -324,6 +336,8 @@ async function hydrateNativeModules(stageDir, stageAppDir) {
     await fs.rm(target, { recursive: true, force: true });
     await copyRecursive(source, target);
   }
+
+  await prunePlatformNativePrebuilds(stageAppDir);
 }
 
 async function buildLinuxArtifacts({
@@ -369,7 +383,7 @@ export async function stagePackagedResources(resourcesDir, targetDir) {
   const entries = await fs.readdir(resourcesDir, { withFileTypes: true });
 
   for (const entry of entries) {
-    if (entry.name === "app.asar" || entry.name === "app.asar.unpacked") {
+    if (skippedLinuxResourceNames.has(entry.name)) {
       continue;
     }
 
@@ -377,6 +391,82 @@ export async function stagePackagedResources(resourcesDir, targetDir) {
     const targetPath = path.join(targetDir, entry.name);
 
     await copyRecursive(sourcePath, targetPath);
+
+    if (entry.name === "plugins") {
+      await prunePackagedPlugins(targetPath);
+    }
+  }
+}
+
+async function prunePackagedPlugins(pluginsDir) {
+  const openaiBundledDir = path.join(pluginsDir, "openai-bundled");
+  const bundledPluginsDir = path.join(openaiBundledDir, "plugins");
+
+  for (const pluginName of skippedBundledPluginNames) {
+    await fs.rm(path.join(bundledPluginsDir, pluginName), {
+      recursive: true,
+      force: true
+    });
+  }
+
+  await filterBundledPluginMarketplace(
+    path.join(openaiBundledDir, ".agents", "plugins", "marketplace.json")
+  );
+}
+
+async function filterBundledPluginMarketplace(marketplacePath) {
+  let marketplace;
+
+  try {
+    marketplace = JSON.parse(await fs.readFile(marketplacePath, "utf8"));
+  } catch (error) {
+    if (error?.code === "ENOENT") {
+      return;
+    }
+
+    throw error;
+  }
+
+  if (!Array.isArray(marketplace.plugins)) {
+    return;
+  }
+
+  marketplace.plugins = marketplace.plugins.filter(plugin => {
+    return !skippedBundledPluginNames.has(plugin?.name);
+  });
+
+  await fs.writeFile(marketplacePath, `${JSON.stringify(marketplace, null, 2)}\n`);
+}
+
+async function prunePlatformNativePrebuilds(stageAppDir) {
+  const nodePtyPrebuildsDir = path.join(
+    stageAppDir,
+    "node_modules",
+    "node-pty",
+    "prebuilds"
+  );
+
+  let entries;
+
+  try {
+    entries = await fs.readdir(nodePtyPrebuildsDir, { withFileTypes: true });
+  } catch (error) {
+    if (error?.code === "ENOENT") {
+      return;
+    }
+
+    throw error;
+  }
+
+  for (const entry of entries) {
+    if (!entry.isDirectory() || entry.name.startsWith("linux-")) {
+      continue;
+    }
+
+    await fs.rm(path.join(nodePtyPrebuildsDir, entry.name), {
+      recursive: true,
+      force: true
+    });
   }
 }
 

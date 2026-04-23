@@ -12,7 +12,7 @@ export const defaultLauncherCommand =
 export const defaultReleaseRepo =
   process.env.CODEX_RELEASE_REPO || "cau1k/codex-app-linux";
 export const defaultPackageRevision = Number(
-  process.env.CODEX_PACKAGE_REVISION || "17"
+  process.env.CODEX_PACKAGE_REVISION || "18"
 );
 
 export const channels = {
