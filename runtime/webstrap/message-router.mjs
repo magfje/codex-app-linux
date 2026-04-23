@@ -819,6 +819,10 @@ export class MessageRouter {
       labels: {}
     };
     this.activeWorkspaceRoots = [this.defaultWorkspaceRoot];
+    this.ideContextState = {
+      openFiles: [],
+      activeEditor: null
+    };
     this.userSelectedActiveWorkspaceRoots = false;
     this.globalStatePath = globalStatePath || path.join(os.homedir(), ".codex", ".codex-global-state.json");
     this.globalState = {};
@@ -1169,6 +1173,8 @@ export class MessageRouter {
         case "electron-set-badge-count":
         case "power-save-blocker-set":
         case "hotkey-window-enabled-changed":
+        case "app-shell-shortcut-state-changed":
+        case "heartbeat-automation-thread-state-changed":
         case "heartbeat-automations-enabled-changed":
         case "codex-runtimes-config-changed":
         case "mac-menu-bar-enabled-changed":
@@ -1766,12 +1772,10 @@ export class MessageRouter {
         case "ide-context":
           payload = {
             ideContext: {
-              workspaceRoot: params?.workspaceRoot ?? null,
-              roots: typeof params?.workspaceRoot === "string" && params.workspaceRoot.length > 0
-                ? [params.workspaceRoot]
-                : [],
-              openFiles: [],
-              activeEditor: null
+              workspaceRoot: this._resolveIdeContextWorkspaceRoot(params),
+              roots: this._resolveIdeContextRoots(params),
+              openFiles: this.ideContextState.openFiles,
+              activeEditor: this.ideContextState.activeEditor
             },
             roots: []
           };
@@ -1813,8 +1817,15 @@ export class MessageRouter {
           status = result.ok ? 200 : 404;
           break;
         }
+        case "read-file-metadata":
+          payload = await this._readFileMetadataPayload(params);
+          break;
         case "read-file-binary":
           payload = await this._readFileBinaryPayload(params);
+          break;
+        case "open-file":
+          payload = this._openFilePayload(params);
+          status = payload.success ? 200 : 404;
           break;
         case "active-workspace-roots":
           payload = { roots: this.activeWorkspaceRoots };
@@ -1868,7 +1879,7 @@ export class MessageRouter {
           payload = { items: [] };
           break;
         case "open-in-targets":
-          payload = { preferredTarget: null, targets: [], availableTargets: [] };
+          payload = await this._readOpenInTargetsPayload(params);
           break;
         case "codex-home":
           payload = { codexHome: null };
@@ -2097,6 +2108,45 @@ export class MessageRouter {
     }
   }
 
+  async _readFileMetadataPayload(params) {
+    const filePath = this._resolveWorkspaceFilePath(params);
+    if (!filePath) {
+      return {
+        exists: false,
+        isFile: false,
+        sizeBytes: 0,
+        lastModifiedMs: null,
+        name: null,
+        path: null
+      };
+    }
+
+    try {
+      const stat = await fs.stat(filePath);
+      return {
+        exists: true,
+        isFile: stat.isFile(),
+        sizeBytes: stat.isFile() ? stat.size : 0,
+        lastModifiedMs: Number.isFinite(stat.mtimeMs) ? stat.mtimeMs : null,
+        name: path.basename(filePath),
+        path: filePath
+      };
+    } catch (error) {
+      this.logger.warn("Failed to read file metadata", {
+        path: filePath,
+        error: toErrorMessage(error)
+      });
+      return {
+        exists: false,
+        isFile: false,
+        sizeBytes: 0,
+        lastModifiedMs: null,
+        name: path.basename(filePath),
+        path: filePath
+      };
+    }
+  }
+
   async _readFilePayload(params) {
     const filePath = this._resolveWorkspaceFilePath(params);
     if (!filePath) {
@@ -2195,6 +2245,74 @@ export class MessageRouter {
     return { entries };
   }
 
+  async _readOpenInTargetsPayload(params) {
+    const metadata = await this._readFileMetadataPayload(params);
+    if (!metadata.isFile) {
+      return {
+        mode: "editor",
+        preferredTarget: null,
+        targets: [],
+        availableTargets: []
+      };
+    }
+
+    return {
+      mode: "editor",
+      preferredTarget: "browserEditor",
+      availableTargets: ["browserEditor"],
+      targets: [{
+        id: "browser-editor",
+        target: "browserEditor",
+        label: "Editor",
+        kind: "editor",
+        appPath: null,
+        hidden: false,
+        default: true,
+        icon: null
+      }]
+    };
+  }
+
+  _openFilePayload(params) {
+    const filePath = this._resolveWorkspaceFilePath(params);
+    if (!filePath) {
+      return {
+        success: false,
+        opened: null
+      };
+    }
+
+    const hostId = typeof params?.hostId === "string" && params.hostId.length > 0
+      ? params.hostId
+      : this.hostConfig?.id || "local";
+    const line = Number.isInteger(params?.line) ? params.line : null;
+    const column = Number.isInteger(params?.column) ? params.column : null;
+    const opened = {
+      hostId,
+      path: filePath,
+      line,
+      column
+    };
+
+    this.ideContextState = {
+      openFiles: [
+        opened,
+        ...this.ideContextState.openFiles.filter((entry) => !(entry?.hostId === hostId && entry?.path === filePath))
+      ],
+      activeEditor: opened
+    };
+
+    const workspaceRoot = this._resolveWorkspaceRootForFile(filePath, params);
+    if (workspaceRoot) {
+      this.activeWorkspaceRoots = [workspaceRoot];
+    }
+
+    return {
+      success: true,
+      opened
+    };
+  }
+
   _resolveWorkspaceFilePath(params) {
     const rawPath = typeof params?.path === "string" ? params.path.trim() : "";
     if (rawPath.length === 0) {
@@ -2205,12 +2323,53 @@ export class MessageRouter {
       return path.resolve(rawPath);
     }
 
-    const workspaceRoot = this._resolveLocalEnvironmentWorkspaceRoot(params?.workspaceRoot);
-    if (!workspaceRoot) {
+    const workspaceRoot = this._normalizeWorkspaceRoot(params?.workspaceRoot)
+      || this._normalizeWorkspaceRoot(params?.cwd)
+      || this._resolveLocalEnvironmentWorkspaceRoot(params?.workspaceRoot);
+    if (!workspaceRoot || !path.isAbsolute(workspaceRoot)) {
       return null;
     }
 
     return safePathJoin(workspaceRoot, rawPath);
+  }
+
+  _resolveIdeContextWorkspaceRoot(params) {
+    const activeEditorPath = this.ideContextState.activeEditor?.path;
+    if (typeof activeEditorPath === "string" && activeEditorPath.length > 0) {
+      const workspaceRoot = this._resolveWorkspaceRootForFile(activeEditorPath, params);
+      if (workspaceRoot) {
+        return workspaceRoot;
+      }
+    }
+
+    return this._resolveLocalEnvironmentWorkspaceRoot(params?.workspaceRoot);
+  }
+
+  _resolveIdeContextRoots(params) {
+    const workspaceRoot = this._resolveIdeContextWorkspaceRoot(params);
+    if (workspaceRoot) {
+      return [workspaceRoot];
+    }
+    return [];
+  }
+
+  _resolveWorkspaceRootForFile(filePath, params) {
+    const candidates = [
+      params?.workspaceRoot,
+      params?.cwd,
+      ...(Array.isArray(this.activeWorkspaceRoots) ? this.activeWorkspaceRoots : []),
+      ...(Array.isArray(this.workspaceRootOptions?.roots) ? this.workspaceRootOptions.roots : [])
+    ]
+      .map((candidate) => this._normalizeWorkspaceRoot(candidate))
+      .filter(Boolean);
+
+    for (const candidate of candidates) {
+      if (filePath === candidate || filePath.startsWith(`${candidate}${path.sep}`)) {
+        return candidate;
+      }
+    }
+
+    return path.dirname(filePath);
   }
 
   async _resolveGhCliStatus() {

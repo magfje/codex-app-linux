@@ -123,6 +123,67 @@ test("MessageRouter ignores side-panel runtime config change pings in web mode",
   router.dispose();
 });
 
+test("MessageRouter ignores app shell shortcut state pings in web mode", async () => {
+  const router = new MessageRouter({
+    appServer: null,
+    udsClient: null,
+    workerPath: null,
+    logger: createLogger()
+  });
+
+  const sent = [];
+  const ws = {
+    readyState: 1,
+    send(payload) {
+      sent.push(JSON.parse(payload));
+    }
+  };
+
+  await router.handleEnvelope(ws, {
+    type: "view-message",
+    payload: {
+      type: "app-shell-shortcut-state-changed",
+      enabled: true
+    }
+  });
+
+  assert.deepEqual(sent, []);
+
+  router.dispose();
+});
+
+test("MessageRouter ignores heartbeat automation thread state pings in web mode", async () => {
+  const router = new MessageRouter({
+    appServer: null,
+    udsClient: null,
+    workerPath: null,
+    logger: createLogger()
+  });
+
+  const sent = [];
+  const ws = {
+    readyState: 1,
+    send(payload) {
+      sent.push(JSON.parse(payload));
+    }
+  };
+
+  await router.handleEnvelope(ws, {
+    type: "view-message",
+    payload: {
+      type: "heartbeat-automation-thread-state-changed",
+      threadId: "thread-1",
+      isEligible: true,
+      collaborationMode: "default",
+      reason: null
+    }
+  });
+
+  assert.deepEqual(sent, []);
+
+  router.dispose();
+});
+
 test("MessageRouter ignores mac menu bar pings in web mode", async () => {
   const router = new MessageRouter({
     appServer: null,
@@ -515,6 +576,188 @@ test("MessageRouter rejects read-file path escapes outside workspace root", asyn
   assert.equal(sent[0].payload.status, 404);
   assert.deepEqual(JSON.parse(sent[0].payload.bodyJsonString), {
     contents: ""
+  });
+
+  router.dispose();
+});
+
+test("MessageRouter returns file metadata and browser editor targets for opened files", async () => {
+  const router = new MessageRouter({
+    appServer: null,
+    udsClient: null,
+    workerPath: null,
+    logger: createLogger()
+  });
+
+  const workspaceRoot = await fs.mkdtemp(path.join(os.tmpdir(), "codex-app-linux-open-file-"));
+  await fs.mkdir(path.join(workspaceRoot, "docs"));
+  await fs.writeFile(path.join(workspaceRoot, "docs", "notes.md"), "hello world\n");
+
+  const sent = [];
+  const ws = {
+    readyState: 1,
+    send(payload) {
+      sent.push(JSON.parse(payload));
+    }
+  };
+
+  await router._handleVirtualFetch(ws, "req-open", {
+    requestId: "req-open",
+    method: "POST",
+    url: "vscode://codex/open-file",
+    body: JSON.stringify({
+      params: {
+        workspaceRoot,
+        path: "docs/notes.md",
+        hostId: "local",
+        line: 3,
+        column: 4
+      }
+    })
+  });
+
+  await router._handleVirtualFetch(ws, "req-meta", {
+    requestId: "req-meta",
+    method: "POST",
+    url: "vscode://codex/read-file-metadata",
+    body: JSON.stringify({
+      params: {
+        workspaceRoot,
+        path: "docs/notes.md",
+        hostId: "local"
+      }
+    })
+  });
+
+  await router._handleVirtualFetch(ws, "req-ide", {
+    requestId: "req-ide",
+    method: "POST",
+    url: "vscode://codex/ide-context",
+    body: JSON.stringify({
+      params: {
+        workspaceRoot
+      }
+    })
+  });
+
+  await router._handleVirtualFetch(ws, "req-targets", {
+    requestId: "req-targets",
+    method: "POST",
+    url: "vscode://codex/open-in-targets",
+    body: JSON.stringify({
+      params: {
+        workspaceRoot,
+        path: "docs/notes.md",
+        hostId: "local"
+      }
+    })
+  });
+
+  const filePath = path.join(workspaceRoot, "docs", "notes.md");
+
+  assert.equal(sent.length, 4);
+  assert.equal(sent[0].payload.status, 200);
+  assert.deepEqual(JSON.parse(sent[0].payload.bodyJsonString), {
+    success: true,
+    opened: {
+      hostId: "local",
+      path: filePath,
+      line: 3,
+      column: 4
+    }
+  });
+  assert.deepEqual(JSON.parse(sent[1].payload.bodyJsonString), {
+    exists: true,
+    isFile: true,
+    sizeBytes: 12,
+    lastModifiedMs: JSON.parse(sent[1].payload.bodyJsonString).lastModifiedMs,
+    name: "notes.md",
+    path: filePath
+  });
+  assert.deepEqual(JSON.parse(sent[2].payload.bodyJsonString), {
+    ideContext: {
+      workspaceRoot,
+      roots: [workspaceRoot],
+      openFiles: [{
+        hostId: "local",
+        path: filePath,
+        line: 3,
+        column: 4
+      }],
+      activeEditor: {
+        hostId: "local",
+        path: filePath,
+        line: 3,
+        column: 4
+      }
+    },
+    roots: []
+  });
+  assert.deepEqual(JSON.parse(sent[3].payload.bodyJsonString), {
+    mode: "editor",
+    preferredTarget: "browserEditor",
+    availableTargets: ["browserEditor"],
+    targets: [{
+      id: "browser-editor",
+      target: "browserEditor",
+      label: "Editor",
+      kind: "editor",
+      appPath: null,
+      hidden: false,
+      default: true,
+      icon: null
+    }]
+  });
+
+  router.dispose();
+});
+
+test("MessageRouter opens cwd-relative files from chat references", async () => {
+  const router = new MessageRouter({
+    appServer: null,
+    udsClient: null,
+    workerPath: null,
+    logger: createLogger()
+  });
+
+  const workspaceRoot = await fs.mkdtemp(path.join(os.tmpdir(), "codex-app-linux-open-file-cwd-"));
+  await fs.mkdir(path.join(workspaceRoot, "src"));
+  await fs.writeFile(path.join(workspaceRoot, "src", "main.rs"), "fn main() {}\n");
+
+  const sent = [];
+  const ws = {
+    readyState: 1,
+    send(payload) {
+      sent.push(JSON.parse(payload));
+    }
+  };
+
+  await router._handleVirtualFetch(ws, "req-open-cwd", {
+    requestId: "req-open-cwd",
+    method: "POST",
+    url: "vscode://codex/open-file",
+    body: JSON.stringify({
+      params: {
+        cwd: workspaceRoot,
+        path: "src/main.rs",
+        line: 1,
+        column: 4
+      }
+    })
+  });
+
+  const filePath = path.join(workspaceRoot, "src", "main.rs");
+
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0].payload.status, 200);
+  assert.deepEqual(JSON.parse(sent[0].payload.bodyJsonString), {
+    success: true,
+    opened: {
+      hostId: "local",
+      path: filePath,
+      line: 1,
+      column: 4
+    }
   });
 
   router.dispose();
