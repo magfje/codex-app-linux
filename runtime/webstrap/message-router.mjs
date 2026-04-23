@@ -2175,6 +2175,7 @@ export class MessageRouter {
         }
 
         return [{
+          name: entry.name,
           path: normalizedDirectoryPath.length > 0
             ? path.posix.join(normalizedDirectoryPath, entry.name)
             : entry.name,

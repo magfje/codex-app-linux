@@ -351,10 +351,12 @@ test("MessageRouter provides browser-safe virtual fetch defaults", async () => {
   assert.deepEqual(JSON.parse(sent[4].payload.bodyJsonString), {
     entries: [
       {
+        name: "src",
         path: "src",
         type: "directory"
       },
       {
+        name: "README.md",
         path: "README.md",
         type: "file"
       }
@@ -363,6 +365,7 @@ test("MessageRouter provides browser-safe virtual fetch defaults", async () => {
   assert.deepEqual(JSON.parse(sent[5].payload.bodyJsonString), {
     entries: [
       {
+        name: "index.js",
         path: "src/index.js",
         type: "file"
       }
@@ -371,14 +374,17 @@ test("MessageRouter provides browser-safe virtual fetch defaults", async () => {
   assert.deepEqual(JSON.parse(sent[6].payload.bodyJsonString), {
     entries: [
       {
+        name: "src",
         path: "src",
         type: "directory"
       },
       {
+        name: ".env",
         path: ".env",
         type: "file"
       },
       {
+        name: "README.md",
         path: "README.md",
         type: "file"
       }
