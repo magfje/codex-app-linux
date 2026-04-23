@@ -6,6 +6,8 @@ module.exports = async function afterPack(context) {
     return;
   }
 
+  await copyExtraResources(context.appOutDir);
+
   const executableName =
     process.env.CODEX_APP_EXECUTABLE_NAME ||
     context.packager.executableName ||
@@ -23,6 +25,24 @@ module.exports = async function afterPack(context) {
     mode: 0o755
   });
 };
+
+async function copyExtraResources(appOutDir) {
+  const extraResourcesDir = process.env.CODEX_STAGE_RESOURCES_DIR;
+
+  if (!extraResourcesDir) {
+    return;
+  }
+
+  const resourcesDir = path.join(appOutDir, "resources");
+  const entries = await fs.readdir(extraResourcesDir, { withFileTypes: true });
+
+  for (const entry of entries) {
+    const sourcePath = path.join(extraResourcesDir, entry.name);
+    const targetPath = path.join(resourcesDir, entry.name);
+    await fs.rm(targetPath, { recursive: true, force: true });
+    await fs.cp(sourcePath, targetPath, { recursive: true });
+  }
+}
 
 async function isWrappedLauncher(launcherPath, binaryPath) {
   try {

@@ -86,6 +86,7 @@ export function channelPaths(channelName) {
     cacheDir: path.join(cacheRoot, channelName),
     stageDir: path.join(stageRoot, channelName),
     stageAppDir: path.join(stageRoot, channelName, "app"),
+    stageResourcesDir: path.join(stageRoot, channelName, "resources"),
     stageArchiveDir: path.join(stageRoot, channelName, "archive"),
     outputDir: path.join(distRoot, channelName),
     npmDir: path.join(distRoot, "npm", channelName)

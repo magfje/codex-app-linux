@@ -32,6 +32,7 @@ export async function buildChannel({
   await ensureEmptyDir(paths.stageDir);
   await ensureEmptyDir(paths.outputDir);
   await ensureEmptyDir(paths.npmDir);
+  await ensureEmptyDir(paths.stageResourcesDir);
   await ensureDir(paths.stageArchiveDir);
 
   await extractArchive(archivePath, paths.stageArchiveDir);
@@ -48,6 +49,7 @@ export async function buildChannel({
     appAsarPath,
     paths.stageAppDir
   ]);
+  await stagePackagedResources(appResourcesDir, paths.stageResourcesDir);
 
   const effectiveUpstream = await normalizeStagePackage(
     paths.stageAppDir,
@@ -62,6 +64,7 @@ export async function buildChannel({
   await hydrateNativeModules(paths.stageDir, paths.stageAppDir);
   await buildLinuxArtifacts({
     stageAppDir: paths.stageAppDir,
+    stageResourcesDir: paths.stageResourcesDir,
     outputDir: paths.outputDir,
     executableName: channel.executableName,
     productName: channel.displayName,
@@ -325,6 +328,7 @@ async function hydrateNativeModules(stageDir, stageAppDir) {
 
 async function buildLinuxArtifacts({
   stageAppDir,
+  stageResourcesDir,
   outputDir,
   executableName,
   productName,
@@ -349,6 +353,7 @@ async function buildLinuxArtifacts({
       env: {
         ...process.env,
         CODEX_STAGE_APP_DIR: stageAppDir,
+        CODEX_STAGE_RESOURCES_DIR: stageResourcesDir,
         CODEX_OUTPUT_DIR: outputDir,
         CODEX_APP_EXECUTABLE_NAME: executableName,
         CODEX_PRODUCT_NAME: productName,
@@ -358,6 +363,21 @@ async function buildLinuxArtifacts({
       }
     }
   );
+}
+
+export async function stagePackagedResources(resourcesDir, targetDir) {
+  const entries = await fs.readdir(resourcesDir, { withFileTypes: true });
+
+  for (const entry of entries) {
+    if (entry.name === "app.asar") {
+      continue;
+    }
+
+    const sourcePath = path.join(resourcesDir, entry.name);
+    const targetPath = path.join(targetDir, entry.name);
+
+    await copyRecursive(sourcePath, targetPath);
+  }
 }
 
 async function renameAppImage(outputDir, targetName) {
