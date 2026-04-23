@@ -57,6 +57,41 @@ printf '%s\n' "$0" > ${JSON.stringify(markerPath)}
   assert.equal(marker.trim(), binaryPath);
 });
 
+test("afterPack extra resource copy preserves Linux app.asar.unpacked", async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-app-linux-after-pack-"));
+  const appOutDir = path.join(root, "linux-unpacked");
+  const resourcesDir = path.join(appOutDir, "resources");
+  const extraResourcesDir = path.join(root, "extra-resources");
+
+  await fs.mkdir(path.join(resourcesDir, "app.asar.unpacked"), { recursive: true });
+  await fs.mkdir(path.join(extraResourcesDir, "app.asar.unpacked"), { recursive: true });
+  await fs.mkdir(path.join(extraResourcesDir, "plugins", "openai-bundled"), { recursive: true });
+  await fs.writeFile(path.join(resourcesDir, "app.asar.unpacked", "native.txt"), "linux-native");
+  await fs.writeFile(path.join(extraResourcesDir, "app.asar.unpacked", "native.txt"), "darwin-native");
+  await fs.writeFile(path.join(extraResourcesDir, "plugins", "openai-bundled", "marketplace.json"), "{}\n");
+
+  const previous = process.env.CODEX_STAGE_RESOURCES_DIR;
+  process.env.CODEX_STAGE_RESOURCES_DIR = extraResourcesDir;
+  try {
+    await afterPack.copyExtraResources(appOutDir);
+  } finally {
+    if (previous === undefined) {
+      delete process.env.CODEX_STAGE_RESOURCES_DIR;
+    } else {
+      process.env.CODEX_STAGE_RESOURCES_DIR = previous;
+    }
+  }
+
+  assert.equal(
+    await fs.readFile(path.join(resourcesDir, "app.asar.unpacked", "native.txt"), "utf8"),
+    "linux-native"
+  );
+  assert.equal(
+    await fs.readFile(path.join(resourcesDir, "plugins", "openai-bundled", "marketplace.json"), "utf8"),
+    "{}\n"
+  );
+});
+
 test("launcher reports package version without starting Electron", async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-app-linux-version-"));
   const packageRoot = path.join(root, "package");

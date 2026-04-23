@@ -37,12 +37,18 @@ async function copyExtraResources(appOutDir) {
   const entries = await fs.readdir(extraResourcesDir, { withFileTypes: true });
 
   for (const entry of entries) {
+    if (entry.name === "app.asar" || entry.name === "app.asar.unpacked") {
+      continue;
+    }
+
     const sourcePath = path.join(extraResourcesDir, entry.name);
     const targetPath = path.join(resourcesDir, entry.name);
     await fs.rm(targetPath, { recursive: true, force: true });
     await fs.cp(sourcePath, targetPath, { recursive: true });
   }
 }
+
+module.exports.copyExtraResources = copyExtraResources;
 
 async function isWrappedLauncher(launcherPath, binaryPath) {
   try {

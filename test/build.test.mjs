@@ -6,14 +6,19 @@ import path from "node:path";
 
 import { stagePackagedResources } from "../scripts/lib/build.mjs";
 
-test("stagePackagedResources preserves upstream resources except app.asar", async () => {
+test("stagePackagedResources preserves upstream resources except Electron app payloads", async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-app-linux-build-test-"));
   const resourcesDir = path.join(root, "Resources");
   const targetDir = path.join(root, "staged");
 
   await fs.mkdir(path.join(resourcesDir, "plugins", "openai-bundled"), { recursive: true });
   await fs.mkdir(path.join(resourcesDir, "native"), { recursive: true });
+  await fs.mkdir(path.join(resourcesDir, "app.asar.unpacked", "node_modules"), { recursive: true });
   await fs.writeFile(path.join(resourcesDir, "app.asar"), "asar");
+  await fs.writeFile(
+    path.join(resourcesDir, "app.asar.unpacked", "node_modules", "better_sqlite3.node"),
+    "darwin-native"
+  );
   await fs.writeFile(
     path.join(resourcesDir, "plugins", "openai-bundled", "marketplace.json"),
     '{"name":"openai-bundled"}\n'
@@ -25,6 +30,7 @@ test("stagePackagedResources preserves upstream resources except app.asar", asyn
   await stagePackagedResources(resourcesDir, targetDir);
 
   await assert.rejects(fs.access(path.join(targetDir, "app.asar")));
+  await assert.rejects(fs.access(path.join(targetDir, "app.asar.unpacked")));
   assert.equal(
     await fs.readFile(path.join(targetDir, "plugins", "openai-bundled", "marketplace.json"), "utf8"),
     '{"name":"openai-bundled"}\n'

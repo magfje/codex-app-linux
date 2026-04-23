@@ -369,7 +369,7 @@ export async function stagePackagedResources(resourcesDir, targetDir) {
   const entries = await fs.readdir(resourcesDir, { withFileTypes: true });
 
   for (const entry of entries) {
-    if (entry.name === "app.asar") {
+    if (entry.name === "app.asar" || entry.name === "app.asar.unpacked") {
       continue;
     }
 
