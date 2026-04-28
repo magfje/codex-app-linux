@@ -6,7 +6,8 @@ import { patchLinuxOpenTargetsSource } from "../scripts/lib/upstream-patches.mjs
 test("patchLinuxOpenTargetsSource adds Linux editor targets and exposes app paths", () => {
   const source = [
     "prefix",
-    "var Cd=[td,rd,$u,au,Il,Uu,_d,od,Pl,_u,Ku,lu,Rl,mu,ru,cd,yu,pu,ad,fd,Tu,Eu,Du,Ou,ku,Au,ju,Mu,Yu]",
+    "var wd=[nd,id,ed,ou,Ll,Wu,vd,sd,Fl,vu,qu,uu,zl,hu,iu,ld,bu,mu,od,pd,Eu,Du,Ou,ku,Au,ju,Mu,Nu,Xu],Td=t.kr(`open-in-targets`);function Ed(e){return wd.flatMap(t=>{let n=t.platforms[e];return n?[{id:t.id,...n}]:[]})}",
+    "async function Fd(e,t,n,r,i,a,o){let s={args:()=>[],env:()=>({})},c=`open`;await ol(c,s.args(t,r,i,a,o),{env:s.env?.()})}",
     "middle",
     "targets:[...o.map(({id:e,label:t,icon:n,kind:r,hidden:i})=>({id:e,target:e,label:t,icon:n,kind:r,hidden:i,available:s.has(e),default:c===e||void 0})),...p]",
     "suffix"
@@ -20,7 +21,11 @@ test("patchLinuxOpenTargetsSource adds Linux editor targets and exposes app path
   assert.match(patched, /__codexLinuxNvim=jl/);
   assert.match(
     patched,
-    /var Cd=\[__codexLinuxVSCode,__codexLinuxVSCodeInsiders,__codexLinuxCursor,__codexLinuxZed,__codexLinuxNvim,td,rd/
+    /var wd=\[__codexLinuxVSCode,__codexLinuxVSCodeInsiders,__codexLinuxCursor,__codexLinuxZed,__codexLinuxNvim,nd,id/
+  );
+  assert.match(
+    patched,
+    /await ol\(r\.command,r\.args\(__codexLinuxOpenTargetNvimCommand\(e,t,n\)\)\)/
   );
   assert.match(
     patched,
@@ -30,7 +35,8 @@ test("patchLinuxOpenTargetsSource adds Linux editor targets and exposes app path
 
 test("patchLinuxOpenTargetsSource is idempotent for target definitions", () => {
   const source = [
-    "var Cd=[td,rd,$u,au,Il,Uu,_d,od,Pl,_u,Ku,lu,Rl,mu,ru,cd,yu,pu,ad,fd,Tu,Eu,Du,Ou,ku,Au,ju,Mu,Yu]",
+    "var wd=[nd,id,ed,ou,Ll,Wu,vd,sd,Fl,vu,qu,uu,zl,hu,iu,ld,bu,mu,od,pd,Eu,Du,Ou,ku,Au,ju,Mu,Nu,Xu],Td=t.kr(`open-in-targets`);function Ed(e){return wd.flatMap(t=>{let n=t.platforms[e];return n?[{id:t.id,...n}]:[]})}",
+    "async function Fd(e,t,n,r,i,a,o){let s={args:()=>[],env:()=>({})},c=`open`;await ol(c,s.args(t,r,i,a,o),{env:s.env?.()})}",
     "targets:[...o.map(({id:e,label:t,icon:n,kind:r,hidden:i})=>({id:e,target:e,label:t,icon:n,kind:r,hidden:i,available:s.has(e),default:c===e||void 0})),...p]"
   ].join(";");
 

@@ -1,16 +1,15 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 
-const openTargetAnchor = "var Cd=[td,rd,$u,au,Il,Uu,_d,od,Pl,_u,Ku,lu,Rl,mu,ru,cd,yu,pu,ad,fd,Tu,Eu,Du,Ou,ku,Au,ju,Mu,Yu]";
 const openTargetMapAnchor = "targets:[...o.map(({id:e,label:t,icon:n,kind:r,hidden:i})=>({id:e,target:e,label:t,icon:n,kind:r,hidden:i,available:s.has(e),default:c===e||void 0})),...p]";
 
-const linuxOpenTargetDefinitions = [
+const linuxOpenTargetDefinitions = openCommandName => [
   "var __codexLinuxOpenTargetGotoArgs=(e,t)=>t?[`--goto`,`${e}:${t.line}:${t.column}`]:[e]",
   "__codexLinuxOpenTargetColonArgs=(e,t)=>t?[`${e}:${t.line}:${t.column}`]:[e]",
   "__codexLinuxOpenTargetTerminal=()=>{let e=process.env.TERMINAL?.trim();if(e&&W(e))return{command:W(e),args:e=>[`-e`,process.env.SHELL?.trim()||`/bin/sh`,`-lc`,e]};for(let e of [[`ghostty`,e=>[`-e`,process.env.SHELL?.trim()||`/bin/sh`,`-lc`,e]],[`kitty`,e=>[`-e`,process.env.SHELL?.trim()||`/bin/sh`,`-lc`,e]],[`alacritty`,e=>[`-e`,process.env.SHELL?.trim()||`/bin/sh`,`-lc`,e]],[`wezterm`,e=>[`start`,`--`,process.env.SHELL?.trim()||`/bin/sh`,`-lc`,e]],[`gnome-terminal`,e=>[`--`,process.env.SHELL?.trim()||`/bin/sh`,`-lc`,e]],[`konsole`,e=>[`-e`,process.env.SHELL?.trim()||`/bin/sh`,`-lc`,e]],[`xterm`,e=>[`-e`,process.env.SHELL?.trim()||`/bin/sh`,`-lc`,e]]]){let t=W(e[0]);if(t)return{command:t,args:e[1]}}return null}",
   "__codexLinuxOpenTargetNvimArgs=(e,t)=>t?[`+call cursor(${t.line},${t.column})`,e]:[e]",
   "__codexLinuxOpenTargetNvimCommand=(e,n,r)=>`${t.En(e)} ${t.Tn(__codexLinuxOpenTargetNvimArgs(n,r))}`",
-  "__codexLinuxOpenTargetRunNvim=async({command:e,path:t,location:n})=>{let r=__codexLinuxOpenTargetTerminal();if(!r)throw Error(`No terminal emulator found for Neovim`);await al(r.command,r.args(__codexLinuxOpenTargetNvimCommand(e,t,n)))}",
+  `__codexLinuxOpenTargetRunNvim=async({command:e,path:t,location:n})=>{let r=__codexLinuxOpenTargetTerminal();if(!r)throw Error(\`No terminal emulator found for Neovim\`);await ${openCommandName}(r.command,r.args(__codexLinuxOpenTargetNvimCommand(e,t,n)))}`,
   "__codexLinuxVSCode=jl({id:`vscode`,label:`VS Code`,icon:`apps/vscode.png`,kind:`editor`,linux:{detect:()=>W(`code`),args:__codexLinuxOpenTargetGotoArgs}})",
   "__codexLinuxVSCodeInsiders=jl({id:`vscodeInsiders`,label:`VS Code Insiders`,icon:`apps/vscode-insiders.png`,kind:`editor`,linux:{detect:()=>W(`code-insiders`),args:__codexLinuxOpenTargetGotoArgs}})",
   "__codexLinuxCursor=jl({id:`cursor`,label:`Cursor`,icon:`apps/cursor.png`,kind:`editor`,linux:{detect:()=>W(`cursor`),args:__codexLinuxOpenTargetGotoArgs}})",
@@ -42,10 +41,11 @@ export function patchLinuxOpenTargetsSource(source) {
   let patched = source;
 
   if (!patched.includes("__codexLinuxVSCode=")) {
+    const openTargets = findOpenTargetRegistry(patched);
     patched = replaceOnce(
       patched,
-      openTargetAnchor,
-      `${linuxOpenTargetDefinitions};${openTargetAnchor.replace("var Cd=[", "var Cd=[__codexLinuxVSCode,__codexLinuxVSCodeInsiders,__codexLinuxCursor,__codexLinuxZed,__codexLinuxNvim,")}`
+      openTargets.anchor,
+      `${linuxOpenTargetDefinitions(openTargets.openCommandName)};${openTargets.anchor.replace("[", "[__codexLinuxVSCode,__codexLinuxVSCodeInsiders,__codexLinuxCursor,__codexLinuxZed,__codexLinuxNvim,")}`
     );
   }
 
@@ -56,6 +56,35 @@ export function patchLinuxOpenTargetsSource(source) {
   }
 
   return patched;
+}
+
+function findOpenTargetRegistry(source) {
+  const match = source.match(
+    /var ([A-Za-z_$][\w$]*)=\[[^\]]+\],[A-Za-z_$][\w$]*=t\.kr\(`open-in-targets`\);function [A-Za-z_$][\w$]*\(e\)\{return \1\.flatMap/
+  );
+
+  if (!match) {
+    throw new Error("Unable to apply upstream patch; missing open target registry");
+  }
+
+  const anchor = source.slice(match.index, source.indexOf("]", match.index) + 1);
+
+  return {
+    anchor,
+    openCommandName: findOpenCommandName(source)
+  };
+}
+
+function findOpenCommandName(source) {
+  const match = source.match(
+    /await ([A-Za-z_$][\w$]*)\(c,s\.args\(t,r,i,a,o\),\{env:s\.env\?\.\(\)\}\)/
+  );
+
+  if (!match) {
+    throw new Error("Unable to apply upstream patch; missing open command runner");
+  }
+
+  return match[1];
 }
 
 function replaceOnce(source, search, replacement) {
