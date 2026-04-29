@@ -60,7 +60,7 @@ export function patchLinuxOpenTargetsSource(source) {
 
 function findOpenTargetRegistry(source) {
   const match = source.match(
-    /var ([A-Za-z_$][\w$]*)=\[[^\]]+\],[A-Za-z_$][\w$]*=t\.kr\(`open-in-targets`\);function [A-Za-z_$][\w$]*\(e\)\{return \1\.flatMap/
+    /var ([A-Za-z_$][\w$]*)=\[[^\]]+\],[A-Za-z_$][\w$]*=t\.[A-Za-z_$][\w$]*\(`open-in-targets`\);function [A-Za-z_$][\w$]*\(e\)\{return \1\.flatMap/
   );
 
   if (!match) {

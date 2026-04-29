@@ -45,3 +45,18 @@ test("patchLinuxOpenTargetsSource is idempotent for target definitions", () => {
 
   assert.equal(repatched.match(/__codexLinuxVSCode=jl/g).length, 1);
 });
+
+test("patchLinuxOpenTargetsSource accepts alternate minified logger names", () => {
+  const source = [
+    "var Cd=[td,rd,$u,au,Il,Uu,_d,od,Pl,_u,Ku,lu,Rl,mu,ru,cd,yu,pu,ad,fd,Tu,Eu,Du,Ou,ku,Au,ju,Mu,Yu],wd=t.Or(`open-in-targets`);function Td(e){return Cd.flatMap(t=>{let n=t.platforms[e];return n?[{id:t.id,...n}]:[]})}",
+    "async function Pd(e,t,n,r,i,a,o){let s={args:()=>[],env:()=>({})},c=`open`;await ol(c,s.args(t,r,i,a,o),{env:s.env?.()})}",
+    "targets:[...o.map(({id:e,label:t,icon:n,kind:r,hidden:i})=>({id:e,target:e,label:t,icon:n,kind:r,hidden:i,available:s.has(e),default:c===e||void 0})),...p]"
+  ].join(";");
+
+  const patched = patchLinuxOpenTargetsSource(source);
+
+  assert.match(
+    patched,
+    /var Cd=\[__codexLinuxVSCode,__codexLinuxVSCodeInsiders,__codexLinuxCursor,__codexLinuxZed,__codexLinuxNvim,td,rd/
+  );
+});
