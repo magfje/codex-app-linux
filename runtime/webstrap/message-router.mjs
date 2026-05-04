@@ -1895,6 +1895,9 @@ export class MessageRouter {
             }
           };
           break;
+        case "codex-command-keymap-state":
+          payload = { bindings: [] };
+          break;
         case "get-configuration":
           payload = { value: this._resolveConfigurationValue(params?.key) };
           break;
