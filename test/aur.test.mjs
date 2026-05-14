@@ -64,4 +64,10 @@ test("writeAurPackage emits PKGBUILD, .SRCINFO, and install script", async () =>
   );
   assert.match(srcinfo, /pkgver = 26.313.41514_launcher.1/);
   assert.match(installScript, /expects an existing 'codex' binary on PATH/);
+  assert.match(installScript, /pre_upgrade\(\)/);
+  assert.match(installScript, /pre_remove\(\)/);
+  assert.match(
+    installScript,
+    /pattern="\/opt\/codex-app-linux\/codex-app-linux-bin"/
+  );
 });

@@ -67,7 +67,7 @@ export async function writeAurPackage({
     iconSourceUrl,
     iconSha256
   });
-  const installScript = renderInstallScript({ pkgname });
+  const installScript = renderInstallScript({ appDirName, executableName, pkgname });
 
   await fs.writeFile(pkgbuildPath, pkgbuild);
   await fs.writeFile(srcinfoPath, srcinfo);
@@ -198,7 +198,7 @@ pkgname = ${pkgname}
 `;
 }
 
-function renderInstallScript({ pkgname }) {
+function renderInstallScript({ appDirName, executableName, pkgname }) {
   return `post_install() {
   cat <<'EOF'
 ${pkgname} expects an existing 'codex' binary on PATH.
@@ -206,8 +206,38 @@ If Codex CLI is installed somewhere else, set CODEX_CLI_PATH before launch.
 EOF
 }
 
+_stop_running_codex_app() {
+  # Electron lazy-loads renderer chunks from app.asar by path/offset. Replacing
+  # the bundle under a running process can make later imports read corrupt JS.
+  local pattern="/opt/${appDirName}/${executableName}-bin"
+  local pids
+
+  pids="$(pgrep -f -- "$pattern" 2>/dev/null || true)"
+  [ -z "$pids" ] && return 0
+
+  echo "Stopping running ${pkgname} before package files are changed..."
+  kill $pids 2>/dev/null || true
+
+  for _ in 1 2 3 4 5 6 7 8 9 10; do
+    pids="$(pgrep -f -- "$pattern" 2>/dev/null || true)"
+    [ -z "$pids" ] && return 0
+    sleep 1
+  done
+
+  echo "Forcing ${pkgname} to exit before package files are changed..."
+  kill -9 $pids 2>/dev/null || true
+}
+
+pre_upgrade() {
+  _stop_running_codex_app
+}
+
 post_upgrade() {
   post_install
+}
+
+pre_remove() {
+  _stop_running_codex_app
 }
 `;
 }
