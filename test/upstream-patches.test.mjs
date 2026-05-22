@@ -74,3 +74,19 @@ test("patchLinuxOpenTargetsSource tolerates targets without platform maps", () =
 
   assert.match(patched, /let n=t\.platforms\?\.\[e\];return n/);
 });
+
+test("patchLinuxOpenTargetsSource preserves native target spread variable", () => {
+  const source = [
+    "var uD=[HE,WE],dD=t.ti(`open-in-targets`);function fD(e){return uD.flatMap(t=>{let n=t.platforms[e];return n?[{id:t.id,...n}]:[]})}",
+    "async function xD(e,t,n,r,i,a,o){let s={args:()=>[],env:()=>({})},c=`open`;await zi(c,s.args(t,r,i,a,o),{env:s.env?.()})}",
+    "targets:[...o.map(({id:e,label:t,icon:n,kind:r,hidden:i})=>({id:e,target:e,label:t,icon:n,kind:r,hidden:i,available:s.has(e),default:c===e||void 0})),...h]"
+  ].join(";");
+
+  const patched = patchLinuxOpenTargetsSource(source);
+
+  assert.match(
+    patched,
+    /appPath:process\.platform===`linux`&&r===`editor`&&s\.has\(e\)\?Ld\(\)\.get\(e\)\?\?null:null/
+  );
+  assert.match(patched, /\}\)\),\.\.\.h\]/);
+});

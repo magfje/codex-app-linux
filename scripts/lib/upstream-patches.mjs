@@ -1,8 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 
-const openTargetMapAnchor = "targets:[...o.map(({id:e,label:t,icon:n,kind:r,hidden:i})=>({id:e,target:e,label:t,icon:n,kind:r,hidden:i,available:s.has(e),default:c===e||void 0})),...p]";
-
 const linuxOpenTargetDefinitions = openCommandName => [
   "var __codexLinuxOpenTargetGotoArgs=(e,t)=>t?[`--goto`,`${e}:${t.line}:${t.column}`]:[e]",
   "__codexLinuxOpenTargetColonArgs=(e,t)=>t?[`${e}:${t.line}:${t.column}`]:[e]",
@@ -49,15 +47,46 @@ export function patchLinuxOpenTargetsSource(source) {
     );
   }
 
-  const patchedOpenTargetMap = "targets:[...o.map(({id:e,label:t,icon:n,kind:r,hidden:i})=>({id:e,target:e,label:t,icon:n,kind:r,hidden:i,appPath:process.platform===`linux`&&r===`editor`&&s.has(e)?Ld().get(e)??null:null,available:s.has(e),default:c===e||void 0})),...p]";
-
-  if (!patched.includes(patchedOpenTargetMap)) {
-    patched = replaceOnce(patched, openTargetMapAnchor, patchedOpenTargetMap);
-  }
+  patched = patchOpenTargetMap(patched);
 
   patched = patchOpenTargetPlatformLookup(patched);
 
   return patched;
+}
+
+function patchOpenTargetMap(source) {
+  if (source.includes("appPath:process.platform===`linux`")) {
+    return source;
+  }
+
+  const match = source.match(
+    /targets:\[\.\.\.([A-Za-z_$][\w$]*)\.map\(\(\{id:([A-Za-z_$][\w$]*),label:([A-Za-z_$][\w$]*),icon:([A-Za-z_$][\w$]*),kind:([A-Za-z_$][\w$]*),hidden:([A-Za-z_$][\w$]*)\}\)=>\(\{id:\2,target:\2,label:\3,icon:\4,kind:\5,hidden:\6,available:([A-Za-z_$][\w$]*)\.has\(\2\),default:([A-Za-z_$][\w$]*)===\2\|\|void 0\}\)\),\.\.\.([A-Za-z_$][\w$]*)\]/
+  );
+
+  if (!match) {
+    throw new Error("Unable to apply upstream patch; missing open target map");
+  }
+
+  const [
+    anchor,
+    targetsVar,
+    idVar,
+    labelVar,
+    iconVar,
+    kindVar,
+    hiddenVar,
+    availableSetVar,
+    defaultTargetVar,
+    extraTargetsVar
+  ] = match;
+
+  const patchedMap =
+    `targets:[...${targetsVar}.map(({id:${idVar},label:${labelVar},icon:${iconVar},kind:${kindVar},hidden:${hiddenVar}})=>({` +
+    `id:${idVar},target:${idVar},label:${labelVar},icon:${iconVar},kind:${kindVar},hidden:${hiddenVar},` +
+    `appPath:process.platform===\`linux\`&&${kindVar}===\`editor\`&&${availableSetVar}.has(${idVar})?Ld().get(${idVar})??null:null,` +
+    `available:${availableSetVar}.has(${idVar}),default:${defaultTargetVar}===${idVar}||void 0})),...${extraTargetsVar}]`;
+
+  return replaceOnce(source, anchor, patchedMap);
 }
 
 function patchOpenTargetPlatformLookup(source) {
