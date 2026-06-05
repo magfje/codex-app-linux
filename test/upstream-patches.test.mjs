@@ -63,6 +63,25 @@ test("patchLinuxOpenTargetsSource accepts alternate minified logger names", () =
   );
 });
 
+test("patchLinuxOpenTargetsSource accepts upstream electron 42 registry shape", () => {
+  const source = [
+    "var Wk=[Tk,Dk,Ck,OO,aO,MO,pk,Vk,Ak,rO,VO,gk,NO,sO,RO,EO,Mk,UO,LO,kk,Ik,YO,XO,ZO,QO,$O,ek,tk,nk,yk],Gk=n.Rr(`open-in-targets`);function Kk(e){return Wk.flatMap(t=>{let n=t.platforms[e];return n?[{id:t.id,...n}]:[]})}",
+    "async function tA(e,t,n,r,i,a,o){let s={args:()=>[],env:()=>({})},c=`open`;await vo(c,s.args(t,r,i,a,o),{env:s.env?.()})}",
+    "targets:[...s.map(({id:e,label:t,icon:n,kind:r,hidden:i})=>({id:e,target:e,label:t,icon:n,kind:r,hidden:i,available:c.has(e),default:l===e||void 0})),...g]"
+  ].join(";");
+
+  const patched = patchLinuxOpenTargetsSource(source);
+
+  assert.match(
+    patched,
+    /var Wk=\[__codexLinuxVSCode,__codexLinuxVSCodeInsiders,__codexLinuxCursor,__codexLinuxZed,__codexLinuxNvim,Tk,Dk/
+  );
+  assert.match(
+    patched,
+    /targets:\[\.\.\.s\.map\(\(\{id:e,label:t,icon:n,kind:r,hidden:i\}\)=>\(\{id:e,target:e,label:t,icon:n,kind:r,hidden:i,appPath:process\.platform===`linux`&&r===`editor`&&c\.has\(e\)\?Ld\(\)\.get\(e\)\?\?null:null,available:c\.has\(e\),default:l===e\|\|void 0\}\)\),\.\.\.g\]/
+  );
+});
+
 test("patchLinuxOpenTargetsSource tolerates targets without platform maps", () => {
   const source = [
     "var wd=[nd,id],Td=t.kr(`open-in-targets`);function Ed(e){return wd.flatMap(t=>{let n=t.platforms[e];return n?[{id:t.id,...n}]:[]})}",

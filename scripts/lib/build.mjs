@@ -75,11 +75,12 @@ export async function buildChannel({
   const assetPrefix = assetBaseName(packageName, packageVersion);
   const linuxIconPath = await createLinuxIcon(paths.stageDir, paths.stageAppDir);
 
-  await hydrateNativeModules(paths.stageDir, paths.stageAppDir);
+  await hydrateNativeModules(paths.stageDir, paths.stageAppDir, effectiveUpstream.electronVersion);
   await buildLinuxArtifacts({
     stageAppDir: paths.stageAppDir,
     stageResourcesDir: paths.stageResourcesDir,
     outputDir: paths.outputDir,
+    electronVersion: effectiveUpstream.electronVersion,
     executableName: channel.executableName,
     productName: channel.displayName,
     desktopName: channel.displayName,
@@ -252,8 +253,19 @@ async function normalizeStagePackage(stageAppDir, upstream, archiveOverride) {
     ...upstream,
     archiveUrl: archiveOverride || upstream.archiveUrl,
     version: original.version,
-    buildNumber: original.codexBuildNumber
+    buildNumber: original.codexBuildNumber,
+    electronVersion: resolveElectronVersion(original)
   };
+}
+
+function resolveElectronVersion(packageJson) {
+  const electronVersion = packageJson.devDependencies?.electron;
+
+  if (typeof electronVersion !== "string" || !/^\d+\.\d+\.\d+$/.test(electronVersion)) {
+    throw new Error("Upstream package.json must declare an exact devDependencies.electron version");
+  }
+
+  return electronVersion;
 }
 
 async function createLinuxIcon(stageDir, stageAppDir) {
@@ -276,7 +288,7 @@ async function createLinuxIcon(stageDir, stageAppDir) {
   return iconPath;
 }
 
-async function hydrateNativeModules(stageDir, stageAppDir) {
+async function hydrateNativeModules(stageDir, stageAppDir, electronVersion) {
   const nativeWorkspaceDir = path.join(stageDir, "native-workspace");
   const stagePackageJson = JSON.parse(
     await fs.readFile(path.join(stageAppDir, "package.json"), "utf8")
@@ -305,13 +317,16 @@ async function hydrateNativeModules(stageDir, stageAppDir) {
   );
 
   await run(["npm", "install", "--no-package-lock"], { cwd: nativeWorkspaceDir });
+  await patchBetterSqlite3NativeSource(
+    path.join(nativeWorkspaceDir, "node_modules", "better-sqlite3")
+  );
   await run(
     [
       "npx",
       "--no-install",
       "electron-rebuild",
       "--version",
-      "40.0.0",
+      electronVersion,
       "--arch",
       "x64",
       "--module-dir",
@@ -342,10 +357,56 @@ async function hydrateNativeModules(stageDir, stageAppDir) {
   await prunePlatformNativePrebuilds(stageAppDir);
 }
 
+export async function patchBetterSqlite3NativeSource(packageDir) {
+  const macrosPath = path.join(packageDir, "src", "util", "macros.cpp");
+  const helpersPath = path.join(packageDir, "src", "util", "helpers.cpp");
+  const entrypointPath = path.join(packageDir, "src", "better_sqlite3.cpp");
+
+  let macros = await fs.readFile(macrosPath, "utf8");
+  macros = replaceOnce(
+    macros,
+    "#define OnlyIsolate info.GetIsolate()\n#define OnlyContext isolate->GetCurrentContext()\n#define OnlyAddon static_cast<Addon*>(info.Data().As<v8::External>()->Value())",
+    [
+      "#define OnlyIsolate info.GetIsolate()",
+      "#define OnlyContext isolate->GetCurrentContext()",
+      "",
+      "// Electron 42 enables V8 external pointer sandboxing; v8::External pointers need tags.",
+      "// See V8's v8-external.h kExternalPointerTypeTagDefault notes.",
+      "#if defined(V8_ENABLE_SANDBOX)",
+      "#define BETTER_SQLITE3_EXTERNAL_NEW(isolate, value) v8::External::New(isolate, value, v8::kExternalPointerTypeTagDefault)",
+      "#define BETTER_SQLITE3_EXTERNAL_VALUE(external) (external)->Value(v8::kExternalPointerTypeTagDefault)",
+      "#else",
+      "#define BETTER_SQLITE3_EXTERNAL_NEW(isolate, value) v8::External::New(isolate, value)",
+      "#define BETTER_SQLITE3_EXTERNAL_VALUE(external) (external)->Value()",
+      "#endif",
+      "",
+      "#define OnlyAddon static_cast<Addon*>(BETTER_SQLITE3_EXTERNAL_VALUE(info.Data().As<v8::External>()))"
+    ].join("\n")
+  );
+  await fs.writeFile(macrosPath, macros);
+
+  let entrypoint = await fs.readFile(entrypointPath, "utf8");
+  entrypoint = replaceOnce(
+    entrypoint,
+    "v8::Local<v8::External> data = v8::External::New(isolate, addon);",
+    "v8::Local<v8::External> data = BETTER_SQLITE3_EXTERNAL_NEW(isolate, addon);"
+  );
+  await fs.writeFile(entrypointPath, entrypoint);
+
+  let helpers = await fs.readFile(helpersPath, "utf8");
+  helpers = replaceOnce(
+    helpers,
+    "\t\tfunc,\n\t\t0,\n\t\tdata",
+    "\t\tfunc,\n\t\tnullptr,\n\t\tdata"
+  );
+  await fs.writeFile(helpersPath, helpers);
+}
+
 async function buildLinuxArtifacts({
   stageAppDir,
   stageResourcesDir,
   outputDir,
+  electronVersion,
   executableName,
   productName,
   desktopName,
@@ -371,6 +432,7 @@ async function buildLinuxArtifacts({
         CODEX_STAGE_APP_DIR: stageAppDir,
         CODEX_STAGE_RESOURCES_DIR: stageResourcesDir,
         CODEX_OUTPUT_DIR: outputDir,
+        CODEX_ELECTRON_VERSION: electronVersion,
         CODEX_APP_EXECUTABLE_NAME: executableName,
         CODEX_PRODUCT_NAME: productName,
         CODEX_DESKTOP_NAME: desktopName,
@@ -502,6 +564,20 @@ async function sha256File(filePath) {
   hash.update(file);
 
   return hash.digest("hex");
+}
+
+function replaceOnce(source, search, replacement) {
+  const index = source.indexOf(search);
+
+  if (index === -1) {
+    throw new Error(`Unable to patch source; missing anchor: ${search.slice(0, 80)}`);
+  }
+
+  if (source.indexOf(search, index + search.length) !== -1) {
+    throw new Error(`Unable to patch source; ambiguous anchor: ${search.slice(0, 80)}`);
+  }
+
+  return `${source.slice(0, index)}${replacement}${source.slice(index + search.length)}`;
 }
 
 async function assembleNpmPackage({

@@ -17,6 +17,6 @@ test("repo package manifest matches publisher toolchain", async () => {
   assert.equal(manifest.scripts.test, "node --test");
   assert.equal(manifest.scripts["release:prod"], "node scripts/release-channel.mjs --channel prod");
   assert.equal(manifest.scripts["release:beta"], "node scripts/release-channel.mjs --channel beta");
-  assert.equal(manifest.devDependencies.electron, "40.0.0");
+  assert.equal(manifest.devDependencies.electron, "42.1.0");
   assert.equal(manifest.devDependencies["electron-builder"], "26.8.1");
 });

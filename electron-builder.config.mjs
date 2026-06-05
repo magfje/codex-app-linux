@@ -5,6 +5,7 @@ const appId = process.env.CODEX_APP_ID || "com.openai.codex.linux";
 const productName = process.env.CODEX_PRODUCT_NAME || "Codex";
 const desktopName = process.env.CODEX_DESKTOP_NAME || productName;
 const linuxIconPath = process.env.CODEX_LINUX_ICON_PATH;
+const electronVersion = process.env.CODEX_ELECTRON_VERSION;
 
 if (!stageAppDir) {
   throw new Error("CODEX_STAGE_APP_DIR is required");
@@ -12,6 +13,10 @@ if (!stageAppDir) {
 
 if (!outputDir) {
   throw new Error("CODEX_OUTPUT_DIR is required");
+}
+
+if (!electronVersion) {
+  throw new Error("CODEX_ELECTRON_VERSION is required");
 }
 
 export default {
@@ -22,7 +27,7 @@ export default {
     app: stageAppDir,
     output: outputDir
   },
-  electronVersion: "40.0.0",
+  electronVersion,
   npmRebuild: false,
   buildDependenciesFromSource: false,
   extraMetadata: {
