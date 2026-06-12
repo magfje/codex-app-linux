@@ -79,27 +79,26 @@ function patchLinuxWindowBackground(source) {
     return source;
   }
 
-  const match = source.match(
-    /function ([A-Za-z_$][\w$]*)\(\{platform:([A-Za-z_$][\w$]*),appearance:([A-Za-z_$][\w$]*),opaqueWindowsEnabled:([A-Za-z_$][\w$]*),prefersDarkColors:([A-Za-z_$][\w$]*)\}\)\{return \4&&!([A-Za-z_$][\w$]*)\(\3\)&&\(\2===`darwin`\|\|\2===`win32`\)\?\{backgroundColor:\5\?([A-Za-z_$][\w$]*):([A-Za-z_$][\w$]*),backgroundMaterial:\2===`win32`\?`none`:null\}:\2===`win32`&&!\6\(\3\)\?\{backgroundColor:([A-Za-z_$][\w$]*),backgroundMaterial:`mica`\}:\{backgroundColor:([A-Za-z_$][\w$]*),backgroundMaterial:null\}\}/
-  );
+  const match =
+    source.match(
+      /function (?<helper>[A-Za-z_$][\w$]*)\(\{platform:(?<platform>[A-Za-z_$][\w$]*),appearance:(?<appearance>[A-Za-z_$][\w$]*),opaqueWindow(?:sEnabled|SurfaceEnabled):(?<opaque>[A-Za-z_$][\w$]*),prefersDarkColors:(?<prefersDark>[A-Za-z_$][\w$]*)\}\)\{return \k<opaque>&&!(?<special>[A-Za-z_$][\w$]*)\(\k<appearance>\)&&\(\k<platform>===`darwin`\|\|\k<platform>===`win32`\)\?\{backgroundColor:\k<prefersDark>\?(?<darkColor>[A-Za-z_$][\w$]*):(?<lightColor>[A-Za-z_$][\w$]*),backgroundMaterial:\k<platform>===`win32`\?`none`:null\}:\k<platform>===`win32`&&!\k<special>\(\k<appearance>\)\?\{backgroundColor:(?<winColor>[A-Za-z_$][\w$]*),backgroundMaterial:`mica`\}:\{backgroundColor:(?<fallbackColor>[A-Za-z_$][\w$]*),backgroundMaterial:null\}\}/
+    ) ??
+    source.match(
+      /function (?<helper>[A-Za-z_$][\w$]*)\(\{platform:(?<platform>[A-Za-z_$][\w$]*),appearance:(?<appearance>[A-Za-z_$][\w$]*),opaqueWindow(?:sEnabled|SurfaceEnabled):(?<opaque>[A-Za-z_$][\w$]*),prefersDarkColors:(?<prefersDark>[A-Za-z_$][\w$]*)\}\)\{return \k<opaque>\?\{backgroundColor:\k<prefersDark>\?(?<darkColor>[A-Za-z_$][\w$]*):(?<lightColor>[A-Za-z_$][\w$]*),backgroundMaterial:\k<platform>===`win32`\?`none`:null\}:\k<platform>===`win32`&&!(?<special>[A-Za-z_$][\w$]*)\(\k<appearance>\)\?\{backgroundColor:(?<winColor>[A-Za-z_$][\w$]*),backgroundMaterial:`mica`\}:\{backgroundColor:(?<fallbackColor>[A-Za-z_$][\w$]*),backgroundMaterial:null\}\}/
+    );
 
   if (!match) {
     throw new Error("Unable to apply upstream patch; missing window background helper");
   }
 
-  const [
-    anchor,
-    ,
-    platformVar,
-    ,
-    ,
-    prefersDarkVar,
-    ,
-    darkColorVar,
-    lightColorVar,
-    ,
-    fallbackColorVar
-  ] = match;
+  const anchor = match[0];
+  const {
+    platform: platformVar,
+    prefersDark: prefersDarkVar,
+    darkColor: darkColorVar,
+    lightColor: lightColorVar,
+    fallbackColor: fallbackColorVar
+  } = match.groups;
   const fallback = `{backgroundColor:${fallbackColorVar},backgroundMaterial:null}`;
   const replacement = anchor.replace(
     fallback,
