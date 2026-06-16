@@ -250,6 +250,7 @@ async function main() {
   const thisFilePath = fileURLToPath(import.meta.url);
   const shimPath = path.resolve(path.join(path.dirname(thisFilePath), "bridge-shim.js"));
   const shimBody = await fs.readFile(shimPath);
+  const appHostBody = createAppHostModuleBody(assetBundle.rpcModulePath, assetBundle.webRoot);
 
   const server = http.createServer(async (req, res) => {
     try {
@@ -292,6 +293,13 @@ async function main() {
             buildFlavor: build.buildFlavor
           })};\n${shimBody}`
         );
+        return;
+      }
+
+      if (url.pathname === "/__webstrapper/app-host.js") {
+        res.statusCode = 200;
+        res.setHeader("content-type", "application/javascript; charset=utf-8");
+        res.end(appHostBody);
         return;
       }
 
@@ -483,4 +491,51 @@ if (isDirectRun) {
     logger.error("Fatal startup error", { error: toErrorMessage(error) });
     process.exit(1);
   });
+}
+
+function createAppHostModuleBody(rpcModulePath, webRoot) {
+  if (!rpcModulePath) {
+    return "console.warn('codex-webstrap app host RPC module not found');\n";
+  }
+
+  const rpcModuleUrl = `/${path.relative(webRoot, rpcModulePath).split(path.sep).join("/")}`;
+
+  return `
+import { E as createRpcPeer } from ${JSON.stringify(rpcModuleUrl)};
+
+const appUpdateSubscribers = new Set();
+const appUpdateState = {
+  appUpdateLifecycleState: "idle"
+};
+
+const appHostMain = {
+  services: {
+    appUpdates: {
+      installUpdate() {},
+      stateChanged(callback) {
+        appUpdateSubscribers.add(callback);
+        try {
+          callback(appUpdateState);
+        } catch {}
+        return () => {
+          appUpdateSubscribers.delete(callback);
+        };
+      }
+    }
+  }
+};
+
+window.addEventListener("message", event => {
+  if (event.source !== window || event.data?.type !== "connect-app-host") {
+    return;
+  }
+
+  const port = event.ports?.[0];
+  if (!port) {
+    return;
+  }
+
+  createRpcPeer(port, appHostMain);
+});
+`;
 }

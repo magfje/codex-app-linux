@@ -243,6 +243,65 @@ test("MessageRouter returns Codex code theme defaults for configuration reads", 
   router.dispose();
 });
 
+test("MessageRouter returns web settings in upstream shape", async () => {
+  const router = new MessageRouter({
+    appServer: null,
+    udsClient: null,
+    workerPath: null,
+    logger: createLogger()
+  });
+
+  const sent = [];
+  const ws = {
+    readyState: 1,
+    send(payload) {
+      sent.push(JSON.parse(payload));
+    }
+  };
+
+  await router._handleVirtualFetch(ws, "req-settings", {
+    requestId: "req-settings",
+    method: "POST",
+    url: "vscode://codex/get-settings",
+    body: JSON.stringify({})
+  });
+
+  await router._handleVirtualFetch(ws, "req-set-setting", {
+    requestId: "req-set-setting",
+    method: "POST",
+    url: "vscode://codex/set-setting",
+    body: JSON.stringify({
+      params: {
+        key: "mac-menu-bar-enabled",
+        value: false
+      }
+    })
+  });
+
+  await router._handleVirtualFetch(ws, "req-get-setting", {
+    requestId: "req-get-setting",
+    method: "POST",
+    url: "vscode://codex/get-setting",
+    body: JSON.stringify({
+      params: {
+        key: "mac-menu-bar-enabled"
+      }
+    })
+  });
+
+  assert.deepEqual(JSON.parse(sent[0].payload.bodyJsonString), {
+    values: {}
+  });
+  assert.deepEqual(JSON.parse(sent[1].payload.bodyJsonString), {
+    ok: true
+  });
+  assert.deepEqual(JSON.parse(sent[2].payload.bodyJsonString), {
+    value: false
+  });
+
+  router.dispose();
+});
+
 test("MessageRouter answers experimental feature enablement writes locally", async () => {
   const appServer = new EventEmitter();
   appServer.sendRaw = async () => {
@@ -335,6 +394,34 @@ test("MessageRouter provides browser-safe virtual fetch defaults", async () => {
     body: JSON.stringify({})
   });
 
+  await router._handleVirtualFetch(ws, "req-4c", {
+    requestId: "req-4c",
+    method: "POST",
+    url: "vscode://codex/inbox-items",
+    body: JSON.stringify({})
+  });
+
+  await router._handleVirtualFetch(ws, "req-4d", {
+    requestId: "req-4d",
+    method: "POST",
+    url: "vscode://codex/chronicle-permissions",
+    body: JSON.stringify({})
+  });
+
+  await router._handleVirtualFetch(ws, "req-4e", {
+    requestId: "req-4e",
+    method: "POST",
+    url: "vscode://codex/set-remote-control-connections-enabled",
+    body: JSON.stringify({})
+  });
+
+  await router._handleVirtualFetch(ws, "req-4f", {
+    requestId: "req-4f",
+    method: "POST",
+    url: "vscode://codex/worktree-shell-environment-config",
+    body: JSON.stringify({})
+  });
+
   await router._handleVirtualFetch(ws, "req-5", {
     requestId: "req-5",
     method: "POST",
@@ -409,17 +496,32 @@ test("MessageRouter provides browser-safe virtual fetch defaults", async () => {
     bindings: []
   });
   assert.deepEqual(JSON.parse(sent[3].payload.bodyJsonString), {
+    items: [],
+    unreadRunCounts: {
+      total: 0
+    }
+  });
+  assert.deepEqual(JSON.parse(sent[4].payload.bodyJsonString), {
+    permissions: []
+  });
+  assert.deepEqual(JSON.parse(sent[5].payload.bodyJsonString), {
+    ok: true
+  });
+  assert.deepEqual(JSON.parse(sent[6].payload.bodyJsonString), {
+    env: {}
+  });
+  assert.deepEqual(JSON.parse(sent[7].payload.bodyJsonString), {
     file: {
       generatedAtMs: null,
       currentSuggestionIds: [],
       suggestions: []
     }
   });
-  assert.equal(sent[4].payload.status, 202);
-  assert.deepEqual(JSON.parse(sent[4].payload.bodyJsonString), {
+  assert.equal(sent[8].payload.status, 202);
+  assert.deepEqual(JSON.parse(sent[8].payload.bodyJsonString), {
     success: true
   });
-  assert.deepEqual(JSON.parse(sent[5].payload.bodyJsonString), {
+  assert.deepEqual(JSON.parse(sent[9].payload.bodyJsonString), {
     entries: [
       {
         name: "src",
@@ -433,7 +535,7 @@ test("MessageRouter provides browser-safe virtual fetch defaults", async () => {
       }
     ]
   });
-  assert.deepEqual(JSON.parse(sent[6].payload.bodyJsonString), {
+  assert.deepEqual(JSON.parse(sent[10].payload.bodyJsonString), {
     entries: [
       {
         name: "index.js",
@@ -442,7 +544,7 @@ test("MessageRouter provides browser-safe virtual fetch defaults", async () => {
       }
     ]
   });
-  assert.deepEqual(JSON.parse(sent[7].payload.bodyJsonString), {
+  assert.deepEqual(JSON.parse(sent[11].payload.bodyJsonString), {
     entries: [
       {
         name: "src",

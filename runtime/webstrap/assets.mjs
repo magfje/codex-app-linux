@@ -221,6 +221,7 @@ export async function ensureExtractedAssets({
   const webRoot = path.join(outputDir, "webview");
   const workerPath = path.join(outputDir, ".vite", "build", "worker.js");
   const indexPath = path.join(webRoot, "index.html");
+  const rpcModulePath = await findAppHostRpcModulePath(path.join(webRoot, "assets"));
 
   await fsp.access(webRoot, fs.constants.R_OK);
   await fsp.access(indexPath, fs.constants.R_OK);
@@ -229,15 +230,32 @@ export async function ensureExtractedAssets({
     outputDir,
     webRoot,
     indexPath,
-    workerPath
+    workerPath,
+    rpcModulePath
   };
+}
+
+async function findAppHostRpcModulePath(assetsDir) {
+  const entries = await fsp.readdir(assetsDir).catch(() => []);
+  for (const entry of entries) {
+    if (!/^rpc-.*\.js$/.test(entry)) {
+      continue;
+    }
+    const filePath = path.join(assetsDir, entry);
+    const source = await fsp.readFile(filePath, "utf8").catch(() => "");
+    if (source.includes("connect-app-host") && source.includes("appUpdates")) {
+      return filePath;
+    }
+  }
+  return null;
 }
 
 export async function buildPatchedIndexHtml(indexPath) {
   let html = await fsp.readFile(indexPath, "utf8");
   const shimTag = '<script src="/__webstrapper/shim.js"></script>';
+  const appHostTag = '<script type="module" src="/__webstrapper/app-host.js"></script>';
 
-  if (html.includes(shimTag)) {
+  if (html.includes(shimTag) && html.includes(appHostTag)) {
     return html;
   }
 
@@ -248,6 +266,21 @@ export async function buildPatchedIndexHtml(indexPath) {
     html = html.replace(existingViewport[0], viewportMeta);
   } else if (html.includes("</head>")) {
     html = html.replace("</head>", `  ${viewportMeta}\n</head>`);
+  }
+
+  if (!html.includes(appHostTag)) {
+    const moduleScript = html.match(/<script\s+type=["']module["'][^>]*><\/script>/i);
+    if (moduleScript) {
+      html = html.replace(moduleScript[0], `${appHostTag}\n    ${moduleScript[0]}`);
+    } else if (html.includes("</head>")) {
+      html = html.replace("</head>", `  ${appHostTag}\n</head>`);
+    } else {
+      html = `${appHostTag}\n${html}`;
+    }
+  }
+
+  if (html.includes(shimTag)) {
+    return html;
   }
 
   if (html.includes("</head>")) {

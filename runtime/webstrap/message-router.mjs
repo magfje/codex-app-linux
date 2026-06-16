@@ -810,6 +810,7 @@ export class MessageRouter {
     this.clients = new Set();
     this.fetchControllers = new Map();
     this.persistedAtomState = new Map();
+    this.webSettings = {};
     this.sharedObjects = new Map();
     this.sharedObjectSubscribers = new Map();
     this.lastAccountRead = null;
@@ -1171,13 +1172,28 @@ export class MessageRouter {
           // Matches desktop host behavior: these are no-ops.
           return;
         case "electron-set-badge-count":
+        case "electron-window-zoom-changed":
         case "power-save-blocker-set":
         case "hotkey-window-enabled-changed":
+        case "global-dictation-enabled-changed":
         case "app-shell-shortcut-state-changed":
         case "heartbeat-automation-thread-state-changed":
         case "heartbeat-automations-enabled-changed":
         case "codex-runtimes-config-changed":
         case "mac-menu-bar-enabled-changed":
+        case "electron-avatar-overlay-restore-ready":
+        case "local-thread-activity-changed":
+        case "tray-menu-threads-changed":
+        case "avatar-overlay-open-state-request":
+        case "keyboard-layout-map-changed":
+        case "electron-sparkle-autodownload-changed":
+        case "browser-sidebar-owner-sync":
+        case "browser-use-non-local-sites-allowed-changed":
+        case "browser-sidebar-tweaks-enabled-changed":
+        case "browser-use-session-route-capture":
+        case "browser-sidebar-sync":
+        case "browser-sidebar-command":
+        case "query-cache-invalidate":
         case "electron-desktop-features-changed":
         case "desktop-notification-show":
         case "desktop-notification-hide":
@@ -1870,7 +1886,12 @@ export class MessageRouter {
           payload = { threadIds: [] };
           break;
         case "inbox-items":
-          payload = { items: [] };
+          payload = {
+            items: [],
+            unreadRunCounts: {
+              total: 0
+            }
+          };
           break;
         case "pending-automation-runs":
           payload = { runs: [] };
@@ -1898,6 +1919,32 @@ export class MessageRouter {
         case "codex-command-keymap-state":
           payload = { bindings: [] };
           break;
+        case "set-remote-control-connections-enabled":
+          payload = { ok: true };
+          break;
+        case "chronicle-permissions":
+          payload = { permissions: [] };
+          break;
+        case "worktree-shell-environment-config":
+          payload = { env: {} };
+          break;
+        case "get-settings":
+          payload = { values: this.webSettings };
+          break;
+        case "get-setting":
+          payload = { value: this._resolveSettingValue(params?.key) };
+          break;
+        case "set-setting": {
+          const key = params?.key;
+          if (typeof key === "string" && key.length > 0) {
+            this.webSettings = {
+              ...this.webSettings,
+              [key]: params?.value
+            };
+          }
+          payload = { ok: true };
+          break;
+        }
         case "get-configuration":
           payload = { value: this._resolveConfigurationValue(params?.key) };
           break;
@@ -3197,6 +3244,18 @@ export class MessageRouter {
   _resolveConfigurationValue(key) {
     if (typeof key !== "string") {
       return null;
+    }
+
+    return DEFAULT_CONFIGURATION_VALUES[key] ?? null;
+  }
+
+  _resolveSettingValue(key) {
+    if (typeof key !== "string") {
+      return null;
+    }
+
+    if (Object.prototype.hasOwnProperty.call(this.webSettings, key)) {
+      return this.webSettings[key];
     }
 
     return DEFAULT_CONFIGURATION_VALUES[key] ?? null;

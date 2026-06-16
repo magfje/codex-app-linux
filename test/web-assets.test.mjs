@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 
 import {
+  buildPatchedIndexHtml,
   defaultAllowedLocalAssetRoots,
   patchStatsigChunkSource,
   readAllowedLocalAssetFile,
@@ -82,6 +83,28 @@ test("readExtractedBuildMetadata reads version from extracted asar package", asy
   assert.equal(metadata.buildNumber, "1251");
   assert.equal(metadata.buildFlavor, "public-beta");
   assert.match(metadata.buildKey, /26\.325\.21211-1251/);
+});
+
+test("buildPatchedIndexHtml installs web app host before upstream app entry", async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-app-linux-web-html-"));
+  const indexPath = path.join(root, "index.html");
+
+  await fs.writeFile(
+    indexPath,
+    [
+      "<html>",
+      "<head>",
+      '<script type="module" crossorigin src="./assets/index-abc.js"></script>',
+      "</head>",
+      "<body></body>",
+      "</html>"
+    ].join("\n")
+  );
+
+  const patched = await buildPatchedIndexHtml(indexPath);
+
+  assert.match(patched, /<script type="module" src="\/__webstrapper\/app-host\.js"><\/script>\s*<script type="module" crossorigin src="\.\/assets\/index-abc\.js"><\/script>/);
+  assert.match(patched, /<script src="\/__webstrapper\/shim\.js"><\/script>/);
 });
 
 test("patchStatsigChunkSource makes statsig init non-blocking", () => {
