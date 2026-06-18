@@ -458,8 +458,14 @@ function findOpenTargetRegistry(source) {
 }
 
 function findOpenCommandName(source) {
+  const openDispatcherName = findOpenCommandNameFromDispatcher(source);
+
+  if (openDispatcherName) {
+    return openDispatcherName;
+  }
+
   const match = source.match(
-    /await ([A-Za-z_$][\w$]*)\(c,s\.args\(t,r,i,a,o\),\{env:s\.env\?\.\(\)\}\)/
+    /await ([A-Za-z_$][\w$]*)\([A-Za-z_$][\w$]*,[A-Za-z_$][\w$]*\.args\([^)]*\),\{env:[A-Za-z_$][\w$]*\.env\?\.\(\)\}\)/
   );
 
   if (!match) {
@@ -467,6 +473,41 @@ function findOpenCommandName(source) {
   }
 
   return match[1];
+}
+
+function findOpenCommandNameFromDispatcher(source) {
+  const ast = parseJavaScript(source);
+  const names = new Set();
+
+  walkAst(ast, node => {
+    if (!isFunctionNode(node)) {
+      return;
+    }
+
+    const body = source.slice(node.start, node.end);
+
+    if (
+      !body.includes("Unknown open target") ||
+      !body.includes("Open target") ||
+      !body.includes(".args(")
+    ) {
+      return;
+    }
+
+    const match = body.match(
+      /await ([A-Za-z_$][\w$]*)\([A-Za-z_$][\w$]*,[A-Za-z_$][\w$]*\.args\([^)]*\)(?:,\{env:[A-Za-z_$][\w$]*\.env\?\.\(\)\})?\)/
+    );
+
+    if (match) {
+      names.add(match[1]);
+    }
+  });
+
+  if (names.size > 1) {
+    throw new Error("Unable to apply upstream patch; ambiguous open command runner");
+  }
+
+  return names.values().next().value ?? null;
 }
 
 function replaceOnce(source, search, replacement) {

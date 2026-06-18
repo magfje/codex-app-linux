@@ -85,6 +85,25 @@ test("patchLinuxOpenTargetsSource accepts upstream electron 42 registry shape", 
   );
 });
 
+test("patchLinuxOpenTargetsSource accepts upstream dispatcher runner shape", () => {
+  const source = [
+    "var kN=[cN,uN,oN,lM],AN=t.qr(`open-in-targets`);function jN(e){return kN.flatMap(t=>{let n=t.platforms[e];return n?[{id:t.id,...n}]:[]})}",
+    "async function BN(e,t,{appPath:n,detectedCommand:r,hostConfig:i,location:a,remotePath:o,remoteWorkspaceRoot:s,targets:c=MN}={}){if(o!=null&&i?.kind===`remote-control`)throw Error(`Remote control does not support open in ${e} yet.`);let l=c.find(t=>t.id===e);if(!l)throw Error(`Unknown open target \"${e}\"`);let u=r??await l.detect(IN);if(!u)throw Error(`Open target \"${e}\" is not available`);if(l.open){await l.open({command:u,path:t,appPath:n,location:a,hostConfig:i,remoteWorkspaceRoot:s,remotePath:o});return}await no(u,l.args(t,a,i,s,o),{env:l.env?.()})}",
+    "targets:[...s.map(({id:e,label:t,icon:n,kind:r,hidden:i})=>({id:e,target:e,label:t,icon:n,kind:r,hidden:i,available:c.has(e),default:l===e||void 0})),...g]"
+  ].join(";");
+
+  const patched = patchLinuxOpenTargetsSource(source);
+
+  assert.match(
+    patched,
+    /var kN=\[__codexLinuxVSCode,__codexLinuxVSCodeInsiders,__codexLinuxCursor,__codexLinuxZed,__codexLinuxNvim,cN,uN/
+  );
+  assert.match(
+    patched,
+    /await no\(r\.command,r\.args\(__codexLinuxOpenTargetNvimCommand\(e,t,n\)\)\)/
+  );
+});
+
 test("patchLinuxOpenTargetsSource tolerates targets without platform maps", () => {
   const source = [
     "var wd=[nd,id],Td=t.kr(`open-in-targets`);function Ed(e){return wd.flatMap(t=>{let n=t.platforms[e];return n?[{id:t.id,...n}]:[]})}",
