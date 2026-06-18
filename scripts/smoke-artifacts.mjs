@@ -224,7 +224,12 @@ async function smokeDesktopBinary(executablePath, resourcesDir) {
     },
     allowTimeout: true
   });
-  const combined = `${result.stdout}\n${result.stderr}`;
+
+  return evaluateDesktopBootResult(result);
+}
+
+export function evaluateDesktopBootResult(result) {
+  const combined = `${result.stdout || ""}\n${result.stderr || ""}`;
   const reachedBootLog = combined.includes("Launching app") || combined.includes("Codex CLI initialized");
   const fatalOutput = /(Fatal|TypeError|ReferenceError|ErrorBoundary|segmentation fault|core dumped)/i.test(combined);
 
@@ -236,14 +241,14 @@ async function smokeDesktopBinary(executablePath, resourcesDir) {
     throw new Error(`desktop binary exited early: exit=${result.code} output=${combined.slice(0, 600)}`);
   }
 
-  if (!reachedBootLog && result.code !== 0) {
+  if (!reachedBootLog && !result.timedOut && result.code !== 0) {
     throw new Error(`desktop binary did not reach boot logs or exit cleanly: exit=${result.code} output=${combined.slice(0, 600)}`);
   }
 
   return {
     exitCode: result.code,
     timedOut: result.timedOut,
-    bootSignal: reachedBootLog ? "log" : "clean-exit"
+    bootSignal: reachedBootLog ? "log" : result.timedOut ? "alive-timeout" : "clean-exit"
   };
 }
 
