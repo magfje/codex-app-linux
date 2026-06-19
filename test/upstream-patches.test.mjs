@@ -385,15 +385,15 @@ test("patchDynamicToolThreadStartBridgeSource normalizes final Electron bridge r
   await vm.runInNewContext(`(async()=>{${patched}})()`, context);
 
   const [normal, prewarm] = context.globalThis.bridge.requests;
-  const namespaceTools = normal.params.dynamicTools[0].tools;
+  const tools = normal.params.dynamicTools;
 
   assert.equal(hasUnguardedDynamicToolThreadStartBridgeSource(patched), false);
-  assert.equal(JSON.stringify(namespaceTools.map(tool => tool.name ?? tool.id)), JSON.stringify(["good", "plainSnake", "plainParams", "bad", "untouched"]));
-  assert.equal(namespaceTools.filter(tool => tool.type === "function").every(tool => tool.inputSchema?.type === "object"), true);
-  assert.equal(JSON.stringify(normal.params.dynamicTools.map(tool => tool.name)), JSON.stringify(["codex_app", "top", "topBad"]));
-  assert.equal(normal.params.dynamicTools[1].type, "function");
-  assert.equal(normal.params.dynamicTools[2].inputSchema.type, "object");
-  assert.deepEqual(prewarm.params.dynamicTools, normal.params.dynamicTools);
+  assert.equal(JSON.stringify(tools.map(tool => tool.name)), JSON.stringify(["good", "plainSnake", "plainParams", "bad", "top", "topBad"]));
+  assert.equal(tools.every(tool => tool.type === "function"), true);
+  assert.equal(tools.every(tool => tool.inputSchema?.type === "object"), true);
+  assert.equal(tools.slice(0, 4).every(tool => tool.namespace === "codex_app"), true);
+  assert.equal(tools.slice(4).every(tool => tool.namespace == null), true);
+  assert.deepEqual(prewarm.params.dynamicTools, tools);
 });
 
 test("patchDynamicToolThreadStartBridgeSource is idempotent", () => {
@@ -451,11 +451,13 @@ test("patchDynamicToolThreadStartRequestSource normalizes final thread/start par
 
   vm.runInNewContext(patched, context);
 
-  const tools = context.globalThis.sent.payload.request.params.dynamicTools[0].tools;
+  const tools = context.globalThis.sent.payload.request.params.dynamicTools;
 
   assert.equal(hasUnguardedDynamicToolThreadStartRequestSource(patched), false);
-  assert.equal(JSON.stringify(tools.map(tool => tool.name)), JSON.stringify(["good", "snake", "params", "untouched"]));
-  assert.equal(tools.filter(tool => tool.type === "function").every(tool => tool.inputSchema?.type === "object"), true);
+  assert.equal(JSON.stringify(tools.map(tool => tool.name)), JSON.stringify(["good", "snake", "params", "bad"]));
+  assert.equal(tools.every(tool => tool.type === "function"), true);
+  assert.equal(tools.every(tool => tool.inputSchema?.type === "object"), true);
+  assert.equal(tools.every(tool => tool.namespace === "codex_app"), true);
 });
 
 test("patchDynamicToolThreadStartRequestSource is idempotent", () => {
