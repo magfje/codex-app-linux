@@ -1,6 +1,10 @@
 # codex-app-linux
 
-Run the Codex desktop app on Linux via npm.
+Run the Codex desktop app on Linux via npm, aur, and a nix flake.
+
+> ‼️ We welcome platform specific PRs/issues/reproductions! Maintainer uses nix/arch (btw).
+
+<img width="2274" height="1387" alt="image" src="https://github.com/user-attachments/assets/8efa863f-3711-4bf1-b36a-8dd165bb04d7" />
 
 `codex-app-linux` is a thin launcher:
 
