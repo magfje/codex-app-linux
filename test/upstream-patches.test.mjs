@@ -6,15 +6,18 @@ import vm from "node:vm";
 import {
   hasUnguardedDynamicToolSchemaContractSource,
   hasUnguardedDynamicToolStartResponseSource,
+  hasUnguardedDynamicToolThreadStartRequestSource,
   hasUnguardedOwlFeatureBindingSource,
   patchDynamicToolSchemaContractSource,
   patchDynamicToolStartResponseSource,
+  patchDynamicToolThreadStartRequestSource,
   patchDisableTransparencySource,
   patchLinuxOwlFeatureBindingSource,
   patchLinuxOpenTargetsSource,
   dynamicToolStartResponseContract,
   upstreamPatchContracts,
-  dynamicToolSchemaContract
+  dynamicToolSchemaContract,
+  dynamicToolThreadStartRequestContract
 } from "../scripts/lib/upstream-patches.mjs";
 
 test("patchLinuxOpenTargetsSource adds Linux editor targets and exposes app paths", () => {
@@ -161,6 +164,11 @@ test("upstream patch contracts declare required contract surface", () => {
     ["apply", "assertAfter", "assertBefore", "find", "name"]
   );
   assert.equal(dynamicToolSchemaContract.name, "dynamic-tool-schema-contract");
+  assert.deepEqual(
+    Object.keys(dynamicToolThreadStartRequestContract).sort(),
+    ["apply", "assertAfter", "assertBefore", "find", "name"]
+  );
+  assert.equal(dynamicToolThreadStartRequestContract.name, "dynamic-tool-thread-start-request");
 });
 
 test("patchLinuxOpenTargetsSource reports contract name on upstream drift", () => {
@@ -376,6 +384,42 @@ test("patchDynamicToolSchemaContractSource normalizes thread-start dynamic tool 
   assert.equal(JSON.stringify(tools.map(tool => tool.name)), JSON.stringify(["good", "snake", "parameters"]));
   assert.equal(tools.every(tool => tool.inputSchema?.type === "object"), true);
   assert.equal(tools.every(tool => tool.deferLoading === true), true);
+});
+
+test("patchDynamicToolThreadStartRequestSource normalizes final thread/start params", () => {
+  const source = [
+    "class Client{constructor(){this.requestPromises=new Map;this.hostId=`local`;this.dispatchMessage=(type,payload)=>{globalThis.sent={type,payload}};this.requestLifecycleListeners=[]}",
+    "createRequest(e,t,n){let r=`req`,i=n?.timeoutMs??0,a=null,o=this.requestPromises.size,s=Date.now(),c=Promise.resolve();return console.debug(`mcp_request_enqueued`),{request:{id:r,method:e,params:t},promise:c}}",
+    "sendRequest(e,t,n){let{request:r,promise:i}=this.createRequest(e,t,n);this.dispatchMessage(`mcp-request`,{request:r,hostId:this.hostId});return i}}",
+    "new Client().sendRequest(`thread/start`,{dynamicTools:[{type:`namespace`,name:`codex_app`,tools:[{type:`function`,name:`good`,inputSchema:{type:`object`}},{type:`function`,name:`snake`,input_schema:{type:`object`}},{type:`function`,name:`params`,parameters:{type:`object`}},{type:`function`,name:`bad`},{type:`other`,name:`untouched`}]}]});"
+  ].join("");
+
+  const patched = patchDynamicToolThreadStartRequestSource(source);
+  const context = {
+    console: { debug() {} },
+    globalThis: {}
+  };
+
+  vm.runInNewContext(patched, context);
+
+  const tools = context.globalThis.sent.payload.request.params.dynamicTools[0].tools;
+
+  assert.equal(hasUnguardedDynamicToolThreadStartRequestSource(patched), false);
+  assert.equal(JSON.stringify(tools.map(tool => tool.name)), JSON.stringify(["good", "snake", "params", "untouched"]));
+  assert.equal(tools.filter(tool => tool.type === "function").every(tool => tool.inputSchema?.type === "object"), true);
+});
+
+test("patchDynamicToolThreadStartRequestSource is idempotent", () => {
+  const source = "class Client{createRequest(e,t,n){let r=`req`,c=Promise.resolve();return console.debug(`mcp_request_enqueued`),{request:{id:r,method:e,params:t},promise:c}}}new Client().createRequest(`thread/start`,{},{});";
+  const patched = patchDynamicToolThreadStartRequestSource(source);
+
+  assert.equal(patchDynamicToolThreadStartRequestSource(patched), patched);
+});
+
+test("hasUnguardedDynamicToolThreadStartRequestSource detects raw thread/start params", () => {
+  const source = "class Client{createRequest(e,t,n){let r=`req`,c=Promise.resolve();return console.debug(`mcp_request_enqueued`),{request:{id:r,method:e,params:t},promise:c}}}new Client().createRequest(`thread/start`,{},{});";
+
+  assert.equal(hasUnguardedDynamicToolThreadStartRequestSource(source), true);
 });
 
 test("patchDynamicToolSchemaContractSource is idempotent", () => {

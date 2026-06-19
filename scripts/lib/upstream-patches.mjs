@@ -26,6 +26,7 @@ const owlFeatureBindingRegex =
 const owlFeatureFallbackMarker = "__codexLinuxOwlFeatureFallback";
 const dynamicToolSchemaContractMarker = "__codexLinuxDynamicToolSchemaContract";
 const dynamicToolStartResponseMarker = "__codexLinuxNormalizeDynamicToolsForThreadStart";
+const dynamicToolThreadStartRequestMarker = "__codexLinuxNormalizeThreadStartRequestParams";
 
 export class UpstreamPatchContractError extends Error {
   constructor(contractName, message, options = {}) {
@@ -101,6 +102,14 @@ export const dynamicToolSchemaContract = {
   assertAfter: assertDynamicToolSchemaContractAfter
 };
 
+export const dynamicToolThreadStartRequestContract = {
+  name: "dynamic-tool-thread-start-request",
+  find: findDynamicToolThreadStartRequestPatch,
+  assertBefore: assertDynamicToolThreadStartRequestBefore,
+  apply: patchDynamicToolThreadStartRequest,
+  assertAfter: assertDynamicToolThreadStartRequestAfter
+};
+
 export async function patchUpstreamApp(stageAppDir) {
   const buildDir = path.join(stageAppDir, ".vite", "build");
   const entries = await fs.readdir(buildDir);
@@ -117,12 +126,14 @@ export async function patchUpstreamApp(stageAppDir) {
   if (patched === source) {
     await patchOwlFeatureBindingChunks(buildDir, entries);
     await patchDynamicToolSchemaContractChunks(stageAppDir);
+    await patchDynamicToolThreadStartRequestChunks(stageAppDir);
     return;
   }
 
   await fs.writeFile(mainBundlePath, patched);
   await patchOwlFeatureBindingChunks(buildDir, entries);
   await patchDynamicToolSchemaContractChunks(stageAppDir);
+  await patchDynamicToolThreadStartRequestChunks(stageAppDir);
 }
 
 export function patchUpstreamMainSource(source) {
@@ -172,6 +183,10 @@ export function patchDynamicToolSchemaContractSource(source) {
   return applyUpstreamPatchContract(source, dynamicToolSchemaContract);
 }
 
+export function patchDynamicToolThreadStartRequestSource(source) {
+  return applyUpstreamPatchContract(source, dynamicToolThreadStartRequestContract);
+}
+
 export function hasUnguardedOwlFeatureBindingSource(source) {
   let index = -1;
 
@@ -199,6 +214,12 @@ export function hasUnguardedDynamicToolSchemaContractSource(source) {
 
 export function hasUnguardedDynamicToolStartResponseSource(source) {
   const patch = findDynamicToolStartResponsePatch(source);
+
+  return patch.status === "patch";
+}
+
+export function hasUnguardedDynamicToolThreadStartRequestSource(source) {
+  const patch = findDynamicToolThreadStartRequestPatch(source);
 
   return patch.status === "patch";
 }
@@ -307,6 +328,44 @@ async function patchDynamicToolSchemaContractChunks(stageAppDir) {
     }
 
     const patched = patchDynamicToolSchemaContractSource(source);
+
+    if (patched !== source) {
+      await fs.writeFile(bundlePath, patched);
+    }
+  }
+}
+
+async function patchDynamicToolThreadStartRequestChunks(stageAppDir) {
+  const assetsDir = path.join(stageAppDir, "webview", "assets");
+  let entries;
+
+  try {
+    entries = await fs.readdir(assetsDir);
+  } catch (error) {
+    if (error?.code === "ENOENT") {
+      throw new UpstreamPatchContractError(
+        dynamicToolThreadStartRequestContract.name,
+        `missing webview assets directory: ${assetsDir}`,
+        { cause: error }
+      );
+    }
+
+    throw error;
+  }
+
+  for (const entry of entries) {
+    if (!entry.endsWith(".js")) {
+      continue;
+    }
+
+    const bundlePath = path.join(assetsDir, entry);
+    const source = await fs.readFile(bundlePath, "utf8");
+
+    if (!source.includes("mcp_request_enqueued") || !source.includes("thread/start")) {
+      continue;
+    }
+
+    const patched = patchDynamicToolThreadStartRequestSource(source);
 
     if (patched !== source) {
       await fs.writeFile(bundlePath, patched);
@@ -443,6 +502,153 @@ function patchDynamicToolStartResponse(source, patch = findDynamicToolStartRespo
       start: target.argumentStart,
       end: target.argumentEnd,
       replacement: `${dynamicToolStartResponseMarker}(${argumentSource})`
+    };
+  });
+
+  replacements.sort((left, right) => right.start - left.start);
+
+  let patched = source;
+  for (const replacement of replacements) {
+    patched = `${patched.slice(0, replacement.start)}${replacement.replacement}${patched.slice(replacement.end)}`;
+  }
+
+  return helper ? `${patched}\n${helper}` : patched;
+}
+
+function findDynamicToolThreadStartRequestPatch(source) {
+  const patches = findDynamicToolThreadStartRequestPatches(source);
+
+  if (patches.length > 0) {
+    return {
+      status: "patch",
+      patches
+    };
+  }
+
+  if (
+    source.includes(dynamicToolThreadStartRequestMarker) &&
+    source.includes("mcp_request_enqueued") &&
+    source.includes("thread/start")
+  ) {
+    return { status: "patched" };
+  }
+
+  if (source.includes("mcp_request_enqueued") && source.includes("thread/start")) {
+    throw new Error("Unable to apply upstream patch; missing thread/start request params");
+  }
+
+  throw new Error("Unable to apply upstream patch; missing thread/start request params");
+}
+
+function findDynamicToolThreadStartRequestPatches(source) {
+  const ast = parseJavaScript(source);
+  const patches = [];
+
+  walkAst(ast, node => {
+    if (
+      node.type !== "MethodDefinition" ||
+      propertyName(node.key) !== "createRequest"
+    ) {
+      return;
+    }
+
+    const methodParam = node.value?.params?.[0];
+    const paramsParam = node.value?.params?.[1];
+
+    if (methodParam?.type !== "Identifier" || paramsParam?.type !== "Identifier") {
+      return;
+    }
+
+    walkAst(node.value.body, child => {
+      if (child.type !== "ObjectExpression") {
+        return;
+      }
+
+      const requestProperty = child.properties.find(property =>
+        property.type === "Property" &&
+        propertyName(property.key) === "request" &&
+        property.value?.type === "ObjectExpression"
+      );
+      const promiseProperty = child.properties.find(property =>
+        property.type === "Property" &&
+        propertyName(property.key) === "promise"
+      );
+
+      if (!requestProperty || !promiseProperty) {
+        return;
+      }
+
+      const requestObject = requestProperty.value;
+      const methodProperty = requestObject.properties.find(property =>
+        property.type === "Property" &&
+        propertyName(property.key) === "method" &&
+        isIdentifierNamed(property.value, methodParam.name)
+      );
+      const paramsProperty = requestObject.properties.find(property =>
+        property.type === "Property" &&
+        propertyName(property.key) === "params" &&
+        isIdentifierNamed(property.value, paramsParam.name)
+      );
+
+      if (!methodProperty || !paramsProperty) {
+        return;
+      }
+
+      patches.push({
+        methodParamName: methodParam.name,
+        paramsParamName: paramsParam.name,
+        paramsStart: paramsProperty.value.start,
+        paramsEnd: paramsProperty.value.end
+      });
+    });
+  });
+
+  if (patches.length > 1) {
+    throw new Error("Unable to apply upstream patch; ambiguous thread/start request params");
+  }
+
+  return patches;
+}
+
+function assertDynamicToolThreadStartRequestBefore(source) {
+  const patch = findDynamicToolThreadStartRequestPatch(source);
+
+  if (!patch || patch.status !== "patch") {
+    throw new Error("missing unguarded thread/start request params");
+  }
+}
+
+function assertDynamicToolThreadStartRequestAfter(source) {
+  if (!source.includes(dynamicToolThreadStartRequestMarker)) {
+    throw new Error("missing thread/start request params normalizer");
+  }
+
+  if (!source.includes("mcp_request_enqueued") || !source.includes("thread/start")) {
+    throw new Error("missing app-server request client");
+  }
+
+  if (hasUnguardedDynamicToolThreadStartRequestSource(source)) {
+    throw new Error("unguarded thread/start request params remain");
+  }
+}
+
+function patchDynamicToolThreadStartRequest(source, patch = findDynamicToolThreadStartRequestPatch(source)) {
+  if (patch?.status === "patched") {
+    return source;
+  }
+
+  const helper = source.includes(dynamicToolThreadStartRequestMarker)
+    ? ""
+    : [
+        `function ${dynamicToolThreadStartRequestMarker}(e){if(e==null||!Array.isArray(e.dynamicTools))return e;return{...e,dynamicTools:e.dynamicTools.map(e=>{if(e?.type!==\`namespace\`||!Array.isArray(e.tools))return e;let t=e.tools.flatMap(e=>{if(e?.type!==\`function\`)return[e];if(e.inputSchema!=null)return[e];if(e.input_schema!=null)return[{...e,inputSchema:e.input_schema}];if(e.parameters!=null)return[{...e,inputSchema:e.parameters}];return[]});return{...e,tools:t}})}}`
+      ].join("");
+  const replacements = patch.patches.map(target => {
+    const paramsSource = source.slice(target.paramsStart, target.paramsEnd);
+
+    return {
+      start: target.paramsStart,
+      end: target.paramsEnd,
+      replacement: `${target.methodParamName}===\`thread/start\`?${dynamicToolThreadStartRequestMarker}(${paramsSource}):${paramsSource}`
     };
   });
 

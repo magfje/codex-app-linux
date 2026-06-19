@@ -9,6 +9,7 @@ import { channelPaths, getChannel, parseArgs, projectRoot } from "./lib/config.m
 import {
   hasUnguardedDynamicToolSchemaContractSource,
   hasUnguardedDynamicToolStartResponseSource,
+  hasUnguardedDynamicToolThreadStartRequestSource,
   hasUnguardedOwlFeatureBindingSource
 } from "./lib/upstream-patches.mjs";
 
@@ -77,6 +78,9 @@ export async function smokeLinuxArtifacts({
   );
   await runCheck(summary, "dynamic-tool-start-response-contract", () =>
     assertDynamicToolStartResponseContract(resourcesDir)
+  );
+  await runCheck(summary, "dynamic-tool-thread-start-request-contract", () =>
+    assertDynamicToolThreadStartRequestContract(resourcesDir)
   );
 
   if (packageDir) {
@@ -394,6 +398,25 @@ async function assertDynamicToolStartResponseContract(resourcesDir) {
   };
 }
 
+async function assertDynamicToolThreadStartRequestContract(resourcesDir) {
+  const appAsarPath = path.join(resourcesDir, "app.asar");
+  const unsafeSources = await findUnguardedDynamicToolThreadStartRequestSources(appAsarPath);
+
+  if (unsafeSources.unsafe.length > 0) {
+    throw new Error(
+      `Renderer thread/start requests must normalize dynamicTools inputSchema at request creation; ${unsafeSources.unsafe.slice(0, 5).join(", ")} still forwards raw params and can fail with "Invalid request: missing field inputSchema"`
+    );
+  }
+
+  if (unsafeSources.checked === 0) {
+    throw new Error("Unable to find renderer thread/start request params contract in app.asar");
+  }
+
+  return {
+    checked: unsafeSources.checked
+  };
+}
+
 async function findUnguardedOwlBindingSources(appAsarPath) {
   const files = await asar.listPackage(appAsarPath);
   const unsafe = [];
@@ -482,6 +505,41 @@ async function findUnguardedDynamicToolSchemaSources(appAsarPath) {
     checked++;
 
     if (hasUnguardedDynamicToolSchemaContractSource(source)) {
+      unsafe.push(file.replace(/^\//, ""));
+    }
+  }
+
+  return {
+    checked,
+    unsafe
+  };
+}
+
+async function findUnguardedDynamicToolThreadStartRequestSources(appAsarPath) {
+  const files = await asar.listPackage(appAsarPath);
+  const unsafe = [];
+  let checked = 0;
+
+  for (const file of files) {
+    if (!/\.(?:js|mjs|cjs)$/i.test(file)) {
+      continue;
+    }
+
+    let source;
+
+    try {
+      source = asar.extractFile(appAsarPath, file.replace(/^\//, "")).toString("utf8");
+    } catch {
+      continue;
+    }
+
+    if (!source.includes("mcp_request_enqueued") || !source.includes("thread/start")) {
+      continue;
+    }
+
+    checked++;
+
+    if (hasUnguardedDynamicToolThreadStartRequestSource(source)) {
       unsafe.push(file.replace(/^\//, ""));
     }
   }
