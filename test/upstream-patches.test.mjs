@@ -388,10 +388,11 @@ test("patchDynamicToolThreadStartBridgeSource normalizes final Electron bridge r
   const namespaceTools = normal.params.dynamicTools[0].tools;
 
   assert.equal(hasUnguardedDynamicToolThreadStartBridgeSource(patched), false);
-  assert.equal(JSON.stringify(namespaceTools.map(tool => tool.name ?? tool.id)), JSON.stringify(["good", "plainSnake", "plainParams", "untouched"]));
+  assert.equal(JSON.stringify(namespaceTools.map(tool => tool.name ?? tool.id)), JSON.stringify(["good", "plainSnake", "plainParams", "bad", "untouched"]));
   assert.equal(namespaceTools.filter(tool => tool.type === "function").every(tool => tool.inputSchema?.type === "object"), true);
-  assert.equal(JSON.stringify(normal.params.dynamicTools.map(tool => tool.name)), JSON.stringify(["codex_app", "top"]));
+  assert.equal(JSON.stringify(normal.params.dynamicTools.map(tool => tool.name)), JSON.stringify(["codex_app", "top", "topBad"]));
   assert.equal(normal.params.dynamicTools[1].type, "function");
+  assert.equal(normal.params.dynamicTools[2].inputSchema.type, "object");
   assert.deepEqual(prewarm.params.dynamicTools, normal.params.dynamicTools);
 });
 
