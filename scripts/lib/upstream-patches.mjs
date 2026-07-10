@@ -114,6 +114,18 @@ export const upstreamPatchContracts = [
     assertBefore: assertLinuxWindowFocusableBefore,
     apply: patchLinuxWindowFocusable,
     assertAfter: assertLinuxWindowFocusableAfter
+  },
+  // Why: the queued-follow-up worker lives in the primary renderer. Chromium
+  // can throttle that renderer while the window is on an inactive Linux
+  // workspace, delaying the next queued message until the window is focused.
+  // Contract: the primary window remains identifiable by the createWindow
+  // focusable option and owns a webPreferences object.
+  {
+    name: "linux-primary-window-background-throttling",
+    find: findLinuxPrimaryWindowBackgroundThrottlingPatch,
+    assertBefore: assertLinuxPrimaryWindowBackgroundThrottlingBefore,
+    apply: patchLinuxPrimaryWindowBackgroundThrottling,
+    assertAfter: assertLinuxPrimaryWindowBackgroundThrottlingAfter
   }
 ];
 
@@ -185,6 +197,18 @@ export function patchDisableTransparencySource(source) {
 
 export function patchLinuxWindowFocusableSource(source) {
   return applyUpstreamPatchContract(source, upstreamPatchContracts[5]);
+}
+
+export function patchLinuxPrimaryWindowBackgroundThrottlingSource(source) {
+  return applyUpstreamPatchContract(source, upstreamPatchContracts[6]);
+}
+
+export function hasLinuxPrimaryWindowBackgroundThrottlingContractSource(source) {
+  return Boolean(findLinuxPrimaryWindowBackgroundThrottlingPatch(source));
+}
+
+export function hasUnguardedLinuxPrimaryWindowBackgroundThrottlingSource(source) {
+  return findLinuxPrimaryWindowBackgroundThrottlingPatch(source)?.status === "patch";
 }
 
 export function patchLinuxOwlFeatureBindingSource(source) {
@@ -1329,6 +1353,116 @@ function assertLinuxWindowFocusableAfter(source) {
   }
 }
 
+function patchLinuxPrimaryWindowBackgroundThrottling(source) {
+  const patch = findLinuxPrimaryWindowBackgroundThrottlingPatch(source);
+
+  if (patch?.status === "patched") {
+    return source;
+  }
+
+  if (!patch) {
+    throw new Error("Unable to apply upstream patch; missing primary BrowserWindow webPreferences");
+  }
+
+  return `${source.slice(0, patch.start)}${patch.replacement}${source.slice(patch.end)}`;
+}
+
+function findLinuxPrimaryWindowBackgroundThrottlingPatch(source) {
+  const ast = parseJavaScript(source);
+  const candidates = [];
+  let patchedCandidates = 0;
+
+  walkAst(ast, node => {
+    if (!isFunctionNode(node)) {
+      return;
+    }
+
+    const bindings = focusableBindingsForFunction(node);
+
+    if (bindings.size === 0 || !node.body) {
+      return;
+    }
+
+    walkAstSkippingNested(node.body, child => {
+      if (child.type !== "NewExpression" || !isMemberPropertyNamed(child.callee, "BrowserWindow")) {
+        return;
+      }
+
+      const options = child.arguments[0];
+
+      if (options?.type !== "ObjectExpression") {
+        return;
+      }
+
+      const isPrimary = [...bindings].some(bindingName =>
+        linuxWindowFocusablePatchForObject(options, bindingName)
+      );
+      const webPreferences = getObjectProperty(options, "webPreferences");
+
+      if (!isPrimary || !webPreferences) {
+        return;
+      }
+
+      if (isLinuxBackgroundThrottlingExpression(webPreferences.value)) {
+        patchedCandidates++;
+        return;
+      }
+
+      const original = source.slice(webPreferences.value.start, webPreferences.value.end);
+      candidates.push({
+        status: "patch",
+        start: webPreferences.value.start,
+        end: webPreferences.value.end,
+        replacement: `process.platform===\`linux\`?{...${original},backgroundThrottling:!1}:${original}`
+      });
+    });
+  });
+
+  if (candidates.length > 1) {
+    throw new Error("Unable to apply upstream patch; ambiguous primary BrowserWindow webPreferences");
+  }
+
+  if (candidates.length === 1) {
+    return candidates[0];
+  }
+
+  if (patchedCandidates > 0) {
+    return { status: "patched" };
+  }
+
+  return null;
+}
+
+function assertLinuxPrimaryWindowBackgroundThrottlingBefore(source) {
+  const patch = findLinuxPrimaryWindowBackgroundThrottlingPatch(source);
+
+  if (!patch || patch.status !== "patch") {
+    throw new Error("missing unguarded primary BrowserWindow webPreferences");
+  }
+}
+
+function assertLinuxPrimaryWindowBackgroundThrottlingAfter(source) {
+  const patch = findLinuxPrimaryWindowBackgroundThrottlingPatch(source);
+
+  if (!patch || patch.status !== "patched") {
+    throw new Error("Linux primary BrowserWindow background throttling assertion failed");
+  }
+}
+
+function isLinuxBackgroundThrottlingExpression(node) {
+  if (
+    node?.type !== "ConditionalExpression" ||
+    !isProcessPlatformEquals(node.test, "linux") ||
+    node.consequent.type !== "ObjectExpression"
+  ) {
+    return false;
+  }
+
+  const backgroundThrottling = getObjectProperty(node.consequent, "backgroundThrottling");
+
+  return Boolean(backgroundThrottling && isFalseExpression(backgroundThrottling.value));
+}
+
 function focusableBindingsForFunction(node) {
   const bindings = new Set();
 
@@ -1474,6 +1608,17 @@ function isTrueExpression(node) {
     node.operator === "!" &&
     node.argument.type === "Literal" &&
     (node.argument.value === 0 || node.argument.value === false)
+  );
+}
+
+function isFalseExpression(node) {
+  return (
+    node?.type === "Literal" && node.value === false
+  ) || (
+    node?.type === "UnaryExpression" &&
+    node.operator === "!" &&
+    node.argument.type === "Literal" &&
+    (node.argument.value === 1 || node.argument.value === true)
   );
 }
 
@@ -1689,6 +1834,24 @@ function isPlatformEquals(node, platformVar, platform) {
     node.operator === "===" &&
     ((isIdentifierNamed(node.left, platformVar) && isStringLiteral(node.right, platform)) ||
       (isStringLiteral(node.left, platform) && isIdentifierNamed(node.right, platformVar)))
+  );
+}
+
+function isProcessPlatformEquals(node, platform) {
+  if (node?.type !== "BinaryExpression" || node.operator !== "===") {
+    return false;
+  }
+
+  const isProcessPlatform = value =>
+    value?.type === "MemberExpression" &&
+    !value.computed &&
+    isIdentifierNamed(value.object, "process") &&
+    propertyName(value.property) === "platform";
+
+  return (
+    isProcessPlatform(node.left) && isStringLiteral(node.right, platform)
+  ) || (
+    isStringLiteral(node.left, platform) && isProcessPlatform(node.right)
   );
 }
 

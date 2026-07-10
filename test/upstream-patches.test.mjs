@@ -9,6 +9,8 @@ import {
   hasUnguardedDynamicToolThreadStartBridgeSource,
   hasUnguardedDynamicToolThreadStartRequestSource,
   hasLinuxWindowFocusableContractSource,
+  hasLinuxPrimaryWindowBackgroundThrottlingContractSource,
+  hasUnguardedLinuxPrimaryWindowBackgroundThrottlingSource,
   hasUnguardedLinuxWindowFocusableSource,
   hasUnguardedOwlFeatureBindingSource,
   patchDynamicToolSchemaContractSource,
@@ -18,6 +20,7 @@ import {
   patchDisableTransparencySource,
   patchLinuxOwlFeatureBindingSource,
   patchLinuxWindowFocusableSource,
+  patchLinuxPrimaryWindowBackgroundThrottlingSource,
   patchLinuxOpenTargetsSource,
   dynamicToolThreadStartBridgeContract,
   dynamicToolStartResponseContract,
@@ -200,7 +203,8 @@ test("upstream patch contracts declare required contract surface", () => {
       "open-target-dispatcher",
       "linux-window-background",
       "linux-window-transparency",
-      "linux-window-focusable-default"
+      "linux-window-focusable-default",
+      "linux-primary-window-background-throttling"
     ]
   );
   assert.deepEqual(
@@ -287,6 +291,40 @@ test("patchLinuxWindowFocusableSource is idempotent", () => {
   const patched = patchLinuxWindowFocusableSource(source);
 
   assert.equal(patchLinuxWindowFocusableSource(patched), patched);
+});
+
+test("patchLinuxPrimaryWindowBackgroundThrottlingSource keeps queued work active", () => {
+  const source = [
+    "function createWindow(e={}){",
+    "let{focusable:m}=e,k={contextIsolation:!0};",
+    "new a.BrowserWindow({title:`overlay`,focusable:!1,webPreferences:{}});",
+    "new a.BrowserWindow({title:`Codex`,focusable:m,webPreferences:k})",
+    "}"
+  ].join("");
+
+  const patched = patchLinuxPrimaryWindowBackgroundThrottlingSource(source);
+
+  assert.match(
+    patched,
+    /webPreferences:process\.platform===`linux`\?\{\.\.\.k,backgroundThrottling:!1\}:k/
+  );
+  assert.match(patched, /title:`overlay`,focusable:!1,webPreferences:\{\}/);
+  assert.equal(hasLinuxPrimaryWindowBackgroundThrottlingContractSource(patched), true);
+  assert.equal(hasUnguardedLinuxPrimaryWindowBackgroundThrottlingSource(source), true);
+  assert.equal(hasUnguardedLinuxPrimaryWindowBackgroundThrottlingSource(patched), false);
+});
+
+test("patchLinuxPrimaryWindowBackgroundThrottlingSource is Linux-only and idempotent", () => {
+  const source = [
+    "function createWindow(e={}){",
+    "let{focusable:m}=e,k={contextIsolation:!0};",
+    "new a.BrowserWindow({title:`Codex`,...(m==null?{}:{focusable:m}),webPreferences:k})",
+    "}"
+  ].join("");
+  const patched = patchLinuxPrimaryWindowBackgroundThrottlingSource(source);
+
+  assert.match(patched, /process\.platform===`linux`/);
+  assert.equal(patchLinuxPrimaryWindowBackgroundThrottlingSource(patched), patched);
 });
 
 test("patchLinuxOpenTargetsSource tolerates targets without platform maps", () => {
