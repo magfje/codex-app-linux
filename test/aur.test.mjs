@@ -56,6 +56,7 @@ test("writeAurPackage emits PKGBUILD, .SRCINFO, and install script", async () =>
   assert.match(pkgbuild, /StartupWMClass=codex/);
   assert.match(pkgbuild, /MimeType=x-scheme-handler\/codex;/);
   assert.match(pkgbuild, /linux-unpacked/);
+  assert.match(pkgbuild, /chmod 4755 .*chrome-sandbox/);
   assert.match(srcinfo, /pkgbase = codex-app-unofficial/);
   assert.match(srcinfo, /provides = codex-app-linux-bin/);
   assert.match(srcinfo, /conflicts = codex-app-linux-bin/);

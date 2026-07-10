@@ -148,6 +148,7 @@ jobs:
         run: |
           json="dist/prod-release.json"
           echo "skipped=$(jq -r '.skipped // false' "$json")" >> "$GITHUB_OUTPUT"
+          echo "linux_dir=$(jq -r '.linuxDir // ""' "$json")" >> "$GITHUB_OUTPUT"
           echo "appimage=$(jq -r '.appImagePath // ""' "$json")" >> "$GITHUB_OUTPUT"
           echo "tarball=$(jq -r '.unpackedTarballPath // ""' "$json")" >> "$GITHUB_OUTPUT"
           echo "icon=$(jq -r '.iconAssetPath // ""' "$json")" >> "$GITHUB_OUTPUT"
@@ -163,6 +164,8 @@ jobs:
       - name: Smoke channel
         if: steps.meta.outputs.skipped != 'true'
         run: |
+          sudo chown root:root "${{ steps.meta.outputs.linux_dir }}/chrome-sandbox"
+          sudo chmod 4755 "${{ steps.meta.outputs.linux_dir }}/chrome-sandbox"
           xvfb-run -a node scripts/smoke-artifacts.mjs \
             --channel "prod" \
             --release-json "dist/prod-release.json" \
@@ -311,6 +314,7 @@ jobs:
         run: |
           json="dist/beta-release.json"
           echo "skipped=$(jq -r '.skipped // false' "$json")" >> "$GITHUB_OUTPUT"
+          echo "linux_dir=$(jq -r '.linuxDir // ""' "$json")" >> "$GITHUB_OUTPUT"
           echo "appimage=$(jq -r '.appImagePath // ""' "$json")" >> "$GITHUB_OUTPUT"
           echo "tarball=$(jq -r '.unpackedTarballPath // ""' "$json")" >> "$GITHUB_OUTPUT"
           echo "icon=$(jq -r '.iconAssetPath // ""' "$json")" >> "$GITHUB_OUTPUT"
@@ -326,6 +330,8 @@ jobs:
       - name: Smoke channel
         if: steps.meta.outputs.skipped != 'true'
         run: |
+          sudo chown root:root "${{ steps.meta.outputs.linux_dir }}/chrome-sandbox"
+          sudo chmod 4755 "${{ steps.meta.outputs.linux_dir }}/chrome-sandbox"
           xvfb-run -a node scripts/smoke-artifacts.mjs \
             --channel "beta" \
             --release-json "dist/beta-release.json" \

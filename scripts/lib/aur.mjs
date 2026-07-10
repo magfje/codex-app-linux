@@ -125,6 +125,7 @@ sha256sums=(
 package() {
   install -dm755 "\${pkgdir}/opt/${appDirName}"
   cp -a "\${srcdir}/linux-unpacked/." "\${pkgdir}/opt/${appDirName}/"
+  chmod 4755 "\${pkgdir}/opt/${appDirName}/chrome-sandbox"
 
   install -dm755 "\${pkgdir}/usr/bin"
   ln -s "/opt/${appDirName}/${executableName}" "\${pkgdir}/usr/bin/${executableName}"

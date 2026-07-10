@@ -20,6 +20,7 @@ test("release workflow publishes the stable build to the personal pacman reposit
   assert.match(prodJob, /repo-add codex-personal\.db\.tar\.gz/);
   assert.match(prodJob, /gh release upload pacman-repo/);
   assert.match(prodJob, /archlinux:base-devel/);
+  assert.match(prodJob, /sudo chmod 4755 .*chrome-sandbox/);
   assert.ok(versionedRelease < packageBuild);
   assert.ok(packageBuild < repositoryPublish);
   assert.doesNotMatch(workflow, /npm publish|aur\.archlinux\.org|AUR_SSH_PRIVATE_KEY/);

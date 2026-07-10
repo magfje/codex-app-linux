@@ -1,6 +1,8 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 
 import { fetchAppcastMetadata } from "./lib/appcast.mjs";
 import { buildChannel } from "./lib/build.mjs";
@@ -13,6 +15,8 @@ import {
   parseArgs
 } from "./lib/config.mjs";
 import { smokeLinuxArtifacts } from "./smoke-artifacts.mjs";
+
+const execFileAsync = promisify(execFile);
 
 const args = parseArgs(process.argv.slice(2));
 const channelNames = parseChannels(args.channel);
@@ -52,6 +56,10 @@ for (const channelName of channelNames) {
       launcherCommand,
       releaseRepo
     });
+
+    if (process.env.GITHUB_ACTIONS === "true") {
+      await prepareGithubActionsSandbox(build.linuxDir);
+    }
 
     phase = "smoke";
     const smoke = runSmoke
@@ -94,6 +102,12 @@ for (const channelName of channelNames) {
       await writeJson(jsonOutputPath, summary);
     }
   }
+}
+
+async function prepareGithubActionsSandbox(linuxDir) {
+  const sandboxPath = path.join(linuxDir, "chrome-sandbox");
+  await execFileAsync("sudo", ["chown", "root:root", sandboxPath]);
+  await execFileAsync("sudo", ["chmod", "4755", sandboxPath]);
 }
 
 summary.finishedAt = new Date().toISOString();
