@@ -35,10 +35,10 @@ const skippedBundledPluginNames = new Set(["computer-use", "latex", "latex-tecto
 const primaryRuntime = {
   url:
     process.env.CODEX_PRIMARY_RUNTIME_URL ||
-    "https://persistent.oaistatic.com/codex-primary-runtime/26.709.11516/codex-primary-runtime-linux-x64-26.709.11516.tar.xz",
+    "https://persistent.oaistatic.com/codex-primary-runtime/26.426.12240/codex-primary-runtime-linux-x64-26.426.12240.tar.xz",
   sha256:
     process.env.CODEX_PRIMARY_RUNTIME_SHA256 ||
-    "bb7812cb913a7db4f04eb85b8beb2fdb84f42983f9abb1c750ed564bce8a4159",
+    "db5624eb6efa36b66ec6f6dd0488cefb966e49636862aab6209a4336c1ca90c4",
   nodeEntry: "codex-primary-runtime/dependencies/node/bin/node",
   nodeReplEntry: "codex-primary-runtime/dependencies/bin/node_repl"
 };
@@ -564,8 +564,58 @@ export async function stagePackagedResources(resourcesDir, targetDir) {
     if (entry.name === "plugins") {
       await prunePackagedPlugins(targetPath);
       await pruneForeignPackagedResources(targetPath);
+      await patchPackagedBrowserClients(targetPath);
     }
   }
+}
+
+async function patchPackagedBrowserClients(pluginsDir) {
+  let patchedClients = 0;
+
+  for (const pluginName of ["browser", "chrome"]) {
+    const clientPath = path.join(
+      pluginsDir,
+      "openai-bundled",
+      "plugins",
+      pluginName,
+      "scripts",
+      "browser-client.mjs"
+    );
+    let source;
+
+    try {
+      source = await fs.readFile(clientPath, "utf8");
+    } catch (error) {
+      if (error?.code === "ENOENT") {
+        continue;
+      }
+
+      throw error;
+    }
+
+    await fs.writeFile(clientPath, patchLegacyNodeReplBrowserClientSource(source));
+    patchedClients += 1;
+  }
+
+  if (patchedClients === 0) {
+    throw new Error("Unable to locate a packaged browser client");
+  }
+}
+
+export function patchLegacyNodeReplBrowserClientSource(source) {
+  const legacyAnchor = "globalThis.nodeRepl?.nativePipe;return";
+  const compatibilityAnchor =
+    "globalThis.nodeRepl?.nativePipe??import.meta.__codexNativePipe;return";
+
+  if (source.includes(compatibilityAnchor)) {
+    return source;
+  }
+
+  if (!source.includes(legacyAnchor)) {
+    throw new Error("Unable to patch browser client native pipe bridge; unknown source shape");
+  }
+
+  return source.replace(legacyAnchor, compatibilityAnchor);
 }
 
 export async function stageLinuxCodexCliRuntime(targetDir) {

@@ -7,6 +7,7 @@ import path from "node:path";
 import {
   installLinuxRuntimeExecutable,
   patchBetterSqlite3NativeSource,
+  patchLegacyNodeReplBrowserClientSource,
   stagePackagedResources,
   writeLinuxAppPackageMetadata
 } from "../scripts/lib/build.mjs";
@@ -65,6 +66,10 @@ test("stagePackagedResources preserves Linux-safe upstream resources", async () 
   await fs.writeFile(
     path.join(resourcesDir, "plugins", "openai-bundled", "plugins", "browser", "scripts", "node_modules", "classic-level", "prebuilds", "linux-x64", "classic-level.node"),
     "linux-x64-native"
+  );
+  await fs.writeFile(
+    path.join(resourcesDir, "plugins", "openai-bundled", "plugins", "browser", "scripts", "browser-client.mjs"),
+    "function vu(){let t=globalThis.nodeRepl?.nativePipe;return t==null?null:t}"
   );
   await fs.writeFile(
     path.join(resourcesDir, "plugins", "openai-bundled", "plugins", "chrome", "extension-host", "macos", "arm64", "extension-host"),
@@ -134,6 +139,13 @@ test("stagePackagedResources preserves Linux-safe upstream resources", async () 
     ),
     "linux-x64-native"
   );
+  assert.match(
+    await fs.readFile(
+      path.join(targetDir, "plugins", "openai-bundled", "plugins", "browser", "scripts", "browser-client.mjs"),
+      "utf8"
+    ),
+    /nativePipe\?\?import\.meta\.__codexNativePipe/
+  );
   assert.equal(
     await fs.readFile(
       path.join(targetDir, "plugins", "openai-bundled", "plugins", "chrome", "extension-host", "linux", "x64", "extension-host"),
@@ -172,6 +184,15 @@ test("installLinuxRuntimeExecutable only accepts Linux x64 ELF executables", asy
 
   const mode = (await fs.stat(target)).mode & 0o777;
   assert.equal(mode, 0o755);
+});
+
+test("patchLegacyNodeReplBrowserClientSource adds the legacy bridge fallback", () => {
+  const source =
+    "function vu(){let t=globalThis.nodeRepl?.nativePipe;return t==null?null:t}";
+  const patched = patchLegacyNodeReplBrowserClientSource(source);
+
+  assert.match(patched, /nativePipe\?\?import\.meta\.__codexNativePipe/);
+  assert.equal(patchLegacyNodeReplBrowserClientSource(patched), patched);
 });
 
 test("writeLinuxAppPackageMetadata preserves explicit web build metadata", async () => {

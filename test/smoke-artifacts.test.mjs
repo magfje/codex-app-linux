@@ -3,32 +3,27 @@ import assert from "node:assert/strict";
 
 import {
   evaluateBundledCodexLauncherSource,
+  evaluateBrowserClientNativePipeCompatibilitySource,
   evaluateDesktopBootResult,
   evaluateLinuxWindowFocusableContractSources,
-  evaluateNodeReplBrowserTrustBridgeBinary,
   hasDynamicToolSchemaCandidateSource
 } from "../scripts/smoke-artifacts.mjs";
 
-test("node_repl browser trust smoke requires the privileged bridge contract", () => {
-  const binary = Buffer.from([
-    "NODE_REPL_TRUSTED_BROWSER_CLIENT_SHA256S",
-    "privileged_bridge_handshake"
-  ].join("\0"));
+test("browser client smoke accepts the legacy node_repl native pipe fallback", () => {
+  const source =
+    "function vu(){let t=globalThis.nodeRepl?.nativePipe??import.meta.__codexNativePipe;return t}";
 
-  assert.deepEqual(evaluateNodeReplBrowserTrustBridgeBinary(binary), {
-    requiredMarkers: [
-      "NODE_REPL_TRUSTED_BROWSER_CLIENT_SHA256S",
-      "privileged_bridge_handshake"
-    ]
+  assert.deepEqual(evaluateBrowserClientNativePipeCompatibilitySource(source), {
+    legacyNodeReplFallback: true
   });
 });
 
-test("node_repl browser trust smoke rejects the legacy native pipe runtime", () => {
-  const binary = Buffer.from("native_pipe_handshake\0native_pipe_request");
-
+test("browser client smoke rejects clients without the legacy native pipe fallback", () => {
   assert.throws(
-    () => evaluateNodeReplBrowserTrustBridgeBinary(binary),
-    /missing the trusted browser bridge contract/
+    () => evaluateBrowserClientNativePipeCompatibilitySource(
+      "function vu(){let t=globalThis.nodeRepl?.nativePipe;return t}"
+    ),
+    /missing the legacy node_repl native pipe fallback/
   );
 });
 

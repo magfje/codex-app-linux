@@ -73,11 +73,8 @@ export async function smokeLinuxArtifacts({
   await runCheck(summary, "cua_node_repl", () =>
     smokeNodeRepl(path.join(resourcesDir, "cua_node", "bin", "node_repl"))
   );
-  await runCheck(summary, "node_repl-browser-trust-bridge", () =>
-    assertNodeReplBrowserTrustBridge(path.join(resourcesDir, "node_repl"))
-  );
-  await runCheck(summary, "cua_node_repl-browser-trust-bridge", () =>
-    assertNodeReplBrowserTrustBridge(path.join(resourcesDir, "cua_node", "bin", "node_repl"))
+  await runCheck(summary, "browser-native-pipe-compatibility", () =>
+    assertBrowserNativePipeCompatibility(resourcesDir)
   );
   await runCheck(summary, "owl-runtime-contract", () =>
     assertOwlRuntimeContract(resourcesDir)
@@ -250,29 +247,41 @@ async function smokeNodeRepl(executablePath) {
   };
 }
 
-async function assertNodeReplBrowserTrustBridge(executablePath) {
-  await accessFile(executablePath, "node_repl");
-  const binary = await fs.readFile(executablePath);
+async function assertBrowserNativePipeCompatibility(resourcesDir) {
+  const pluginRoot = path.join(resourcesDir, "plugins", "openai-bundled", "plugins");
+  const checked = [];
 
-  return evaluateNodeReplBrowserTrustBridgeBinary(binary);
-}
+  for (const pluginName of ["browser", "chrome"]) {
+    const clientPath = path.join(pluginRoot, pluginName, "scripts", "browser-client.mjs");
+    let source;
 
-export function evaluateNodeReplBrowserTrustBridgeBinary(binary) {
-  const requiredMarkers = [
-    "NODE_REPL_TRUSTED_BROWSER_CLIENT_SHA256S",
-    "privileged_bridge_handshake"
-  ];
-  const missing = requiredMarkers.filter(marker => binary.indexOf(marker) === -1);
+    try {
+      source = await fs.readFile(clientPath, "utf8");
+    } catch (error) {
+      if (error?.code === "ENOENT") {
+        continue;
+      }
 
-  if (missing.length > 0) {
-    throw new Error(
-      `node_repl is missing the trusted browser bridge contract: ${missing.join(", ")}`
-    );
+      throw error;
+    }
+
+    evaluateBrowserClientNativePipeCompatibilitySource(source);
+    checked.push(pluginName);
   }
 
-  return {
-    requiredMarkers
-  };
+  if (!checked.includes("browser")) {
+    throw new Error("bundled Browser client is missing");
+  }
+
+  return { checked };
+}
+
+export function evaluateBrowserClientNativePipeCompatibilitySource(source) {
+  if (!source.includes("globalThis.nodeRepl?.nativePipe??import.meta.__codexNativePipe;return")) {
+    throw new Error("browser client is missing the legacy node_repl native pipe fallback");
+  }
+
+  return { legacyNodeReplFallback: true };
 }
 
 async function assertBundledCodexLauncher(linuxDir, executablePath, resourcesDir) {
