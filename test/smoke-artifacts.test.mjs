@@ -5,8 +5,32 @@ import {
   evaluateBundledCodexLauncherSource,
   evaluateDesktopBootResult,
   evaluateLinuxWindowFocusableContractSources,
+  evaluateNodeReplBrowserTrustBridgeBinary,
   hasDynamicToolSchemaCandidateSource
 } from "../scripts/smoke-artifacts.mjs";
+
+test("node_repl browser trust smoke requires the privileged bridge contract", () => {
+  const binary = Buffer.from([
+    "NODE_REPL_TRUSTED_BROWSER_CLIENT_SHA256S",
+    "privileged_bridge_handshake"
+  ].join("\0"));
+
+  assert.deepEqual(evaluateNodeReplBrowserTrustBridgeBinary(binary), {
+    requiredMarkers: [
+      "NODE_REPL_TRUSTED_BROWSER_CLIENT_SHA256S",
+      "privileged_bridge_handshake"
+    ]
+  });
+});
+
+test("node_repl browser trust smoke rejects the legacy native pipe runtime", () => {
+  const binary = Buffer.from("native_pipe_handshake\0native_pipe_request");
+
+  assert.throws(
+    () => evaluateNodeReplBrowserTrustBridgeBinary(binary),
+    /missing the trusted browser bridge contract/
+  );
+});
 
 test("dynamic tool schema smoke requires nearby contract tokens", () => {
   const namespace = "description:`Tools provided by the Codex app.`";

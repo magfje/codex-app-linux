@@ -73,6 +73,12 @@ export async function smokeLinuxArtifacts({
   await runCheck(summary, "cua_node_repl", () =>
     smokeNodeRepl(path.join(resourcesDir, "cua_node", "bin", "node_repl"))
   );
+  await runCheck(summary, "node_repl-browser-trust-bridge", () =>
+    assertNodeReplBrowserTrustBridge(path.join(resourcesDir, "node_repl"))
+  );
+  await runCheck(summary, "cua_node_repl-browser-trust-bridge", () =>
+    assertNodeReplBrowserTrustBridge(path.join(resourcesDir, "cua_node", "bin", "node_repl"))
+  );
   await runCheck(summary, "owl-runtime-contract", () =>
     assertOwlRuntimeContract(resourcesDir)
   );
@@ -241,6 +247,31 @@ async function smokeNodeRepl(executablePath) {
 
   return {
     exitCode: result.code
+  };
+}
+
+async function assertNodeReplBrowserTrustBridge(executablePath) {
+  await accessFile(executablePath, "node_repl");
+  const binary = await fs.readFile(executablePath);
+
+  return evaluateNodeReplBrowserTrustBridgeBinary(binary);
+}
+
+export function evaluateNodeReplBrowserTrustBridgeBinary(binary) {
+  const requiredMarkers = [
+    "NODE_REPL_TRUSTED_BROWSER_CLIENT_SHA256S",
+    "privileged_bridge_handshake"
+  ];
+  const missing = requiredMarkers.filter(marker => binary.indexOf(marker) === -1);
+
+  if (missing.length > 0) {
+    throw new Error(
+      `node_repl is missing the trusted browser bridge contract: ${missing.join(", ")}`
+    );
+  }
+
+  return {
+    requiredMarkers
   };
 }
 
