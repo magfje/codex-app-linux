@@ -47,12 +47,13 @@ export default {
     executableName,
     category: "Development",
     description: `${desktopName} for Linux`,
+    mimeTypes: ["x-scheme-handler/codex"],
     artifactName: "${productName}-${version}-${arch}.${ext}",
     icon: linuxIconPath,
     desktop: {
       entry: {
         Name: desktopName,
-        StartupWMClass: desktopName
+        StartupWMClass: "codex"
       }
     }
   }

@@ -142,6 +142,8 @@ Type=Application
 Icon=${desktopId}
 Categories=Development;
 StartupNotify=true
+StartupWMClass=codex
+MimeType=x-scheme-handler/codex;
 EOF
 
   install -Dm644 "${desktopId}.desktop" \

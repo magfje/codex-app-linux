@@ -53,6 +53,8 @@ test("writeAurPackage emits PKGBUILD, .SRCINFO, and install script", async () =>
     /pkgdesc='Unofficial Linux build of Codex from OpenAI'\\''s Codex appcast feed\.'/
   );
   assert.match(pkgbuild, /Exec=codex-app-linux %U/);
+  assert.match(pkgbuild, /StartupWMClass=codex/);
+  assert.match(pkgbuild, /MimeType=x-scheme-handler\/codex;/);
   assert.match(pkgbuild, /linux-unpacked/);
   assert.match(srcinfo, /pkgbase = codex-app-unofficial/);
   assert.match(srcinfo, /provides = codex-app-linux-bin/);
