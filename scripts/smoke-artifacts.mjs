@@ -636,7 +636,7 @@ async function findUnguardedDynamicToolSchemaSources(appAsarPath) {
       continue;
     }
 
-    if (!source.includes("Tools provided by the Codex app.") || !source.includes("deferLoading")) {
+    if (!hasDynamicToolSchemaCandidateSource(source)) {
       continue;
     }
 
@@ -651,6 +651,24 @@ async function findUnguardedDynamicToolSchemaSources(appAsarPath) {
     checked,
     unsafe
   };
+}
+
+export function hasDynamicToolSchemaCandidateSource(source) {
+  const description = "Tools provided by the Codex app.";
+  let index = -1;
+
+  while ((index = source.indexOf(description, index + 1)) !== -1) {
+    const nearbySource = source.slice(
+      Math.max(0, index - 16_384),
+      Math.min(source.length, index + description.length + 16_384)
+    );
+
+    if (nearbySource.includes("deferLoading")) {
+      return true;
+    }
+  }
+
+  return false;
 }
 
 async function findUnguardedDynamicToolThreadStartRequestSources(appAsarPath) {

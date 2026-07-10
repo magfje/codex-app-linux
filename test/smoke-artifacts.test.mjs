@@ -4,8 +4,20 @@ import assert from "node:assert/strict";
 import {
   evaluateBundledCodexLauncherSource,
   evaluateDesktopBootResult,
-  evaluateLinuxWindowFocusableContractSources
+  evaluateLinuxWindowFocusableContractSources,
+  hasDynamicToolSchemaCandidateSource
 } from "../scripts/smoke-artifacts.mjs";
+
+test("dynamic tool schema smoke requires nearby contract tokens", () => {
+  const namespace = "description:`Tools provided by the Codex app.`";
+  const mapper = ".map(e=>({...e,deferLoading:!0}))";
+
+  assert.equal(hasDynamicToolSchemaCandidateSource(`${namespace}${mapper}`), true);
+  assert.equal(
+    hasDynamicToolSchemaCandidateSource(`${namespace}${"x".repeat(40_000)}${mapper}`),
+    false
+  );
+});
 
 test("desktop boot smoke accepts a silent process still alive at timeout", () => {
   assert.deepEqual(
