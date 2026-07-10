@@ -30,6 +30,20 @@ const openTargetResolverSource =
   "function W(e){let t=which.default.sync(e,{nothrow:!0});return typeof t==`string`&&fs.existsSync(t)?t:null}";
 const withOpenTargetResolver = parts => [openTargetResolverSource, ...parts].join(";");
 
+const assertCanonicalDynamicTools = tools => {
+  const hasLegacyFields = tool =>
+    Object.hasOwn(tool, "namespace") ||
+    Object.hasOwn(tool, "exposeToContext") ||
+    !Object.hasOwn(tool, "type");
+  const hasLegacyFormat = tools.some(
+    tool => hasLegacyFields(tool) || tool.tools?.some(hasLegacyFields)
+  );
+  const hasCanonicalFormat = tools.some(tool => Object.hasOwn(tool, "type"));
+
+  assert.equal(hasLegacyFormat && hasCanonicalFormat, false);
+  assert.equal(hasLegacyFormat, false);
+};
+
 test("patchLinuxOpenTargetsSource adds Linux editor targets and exposes app paths", () => {
   const source = withOpenTargetResolver([
     "prefix",
@@ -485,7 +499,7 @@ test("patchDynamicToolThreadStartBridgeSource normalizes final Electron bridge r
   const source = [
     "class Bridge{constructor(){this.requests=[]}getAppServerConnection(){return{handleClientRequest:async(e,t)=>{this.requests.push(t)},handlePrewarmThreadStart:async(e,t)=>{this.requests.push(t)}}}",
     "async handleMessage(e,n){switch(n.type){case`mcp-request`:{let t=n.request;await this.getAppServerConnection(n.hostId).handleClientRequest({},t);break}case`thread-prewarm-start`:await this.getAppServerConnection(n.hostId).handlePrewarmThreadStart({},n.request);break}}}",
-    "let dynamicTools=[{type:`namespace`,name:`codex_app`,tools:[{type:`function`,name:`good`,inputSchema:{type:`object`}},{name:`plainSnake`,input_schema:{type:`object`}},{name:`plainParams`,parameters:{type:`object`}},{type:`function`,name:`bad`},{type:`other`,id:`untouched`}]},{name:`top`,parameters:{type:`object`}},{name:`topBad`}];",
+    "let dynamicTools=[{type:`namespace`,name:`codex_app`,description:`Desktop tools`,tools:[{type:`function`,name:`good`,description:`Good`,inputSchema:{type:`object`}},{name:`plainSnake`,input_schema:{type:`object`}},{name:`plainParams`,parameters:{type:`object`}},{type:`function`,name:`bad`,deferLoading:!0},{type:`other`,id:`untouched`}]},{name:`legacyGrouped`,namespace:`codex_app`,description:`Legacy`,parameters:{type:`object`}},{name:`top`,parameters:{type:`object`}},{type:`function`,name:`topDeferred`,deferLoading:!0,inputSchema:{type:`object`}},{name:`topBad`}];",
     "globalThis.bridge=new Bridge;await globalThis.bridge.handleMessage(null,{type:`mcp-request`,hostId:`local`,request:{id:`1`,method:`thread/start`,params:{dynamicTools}}});await globalThis.bridge.handleMessage(null,{type:`thread-prewarm-start`,hostId:`local`,request:{id:`2`,method:`thread/start`,params:{dynamicTools}}});"
   ].join("");
 
@@ -500,11 +514,17 @@ test("patchDynamicToolThreadStartBridgeSource normalizes final Electron bridge r
   const tools = normal.params.dynamicTools;
 
   assert.equal(hasUnguardedDynamicToolThreadStartBridgeSource(patched), false);
-  assert.equal(JSON.stringify(tools.map(tool => tool.name)), JSON.stringify(["good", "plainSnake", "plainParams", "bad", "top", "topBad"]));
-  assert.equal(tools.every(tool => tool.type === "function"), true);
-  assert.equal(tools.every(tool => tool.inputSchema?.type === "object"), true);
-  assert.equal(tools.slice(0, 4).every(tool => tool.namespace === "codex_app"), true);
-  assert.equal(tools.slice(4).every(tool => tool.namespace == null), true);
+  assertCanonicalDynamicTools(tools);
+  assert.equal(JSON.stringify(tools.map(tool => tool.name)), JSON.stringify(["codex_app", "top", "topDeferred", "topBad"]));
+  assert.equal(tools[0].type, "namespace");
+  assert.equal(tools[0].description, "Desktop tools");
+  assert.equal(JSON.stringify(tools[0].tools.map(tool => tool.name)), JSON.stringify(["good", "plainSnake", "plainParams", "bad", "legacyGrouped"]));
+  assert.equal(tools[0].tools.every(tool => tool.type === "function"), true);
+  assert.equal(tools[0].tools.every(tool => tool.inputSchema?.type === "object"), true);
+  assert.equal(tools[0].tools.find(tool => tool.name === "bad").deferLoading, true);
+  assert.equal(tools.slice(1).every(tool => tool.type === "function"), true);
+  assert.equal(tools.slice(1).every(tool => tool.inputSchema?.type === "object"), true);
+  assert.equal(tools.find(tool => tool.name === "topDeferred").deferLoading, false);
   assert.deepEqual(prewarm.params.dynamicTools, tools);
 });
 
@@ -552,7 +572,7 @@ test("patchDynamicToolThreadStartRequestSource normalizes final thread/start par
     "class Client{constructor(){this.requestPromises=new Map;this.hostId=`local`;this.dispatchMessage=(type,payload)=>{globalThis.sent={type,payload}};this.requestLifecycleListeners=[]}",
     "createRequest(e,t,n){let r=`req`,i=n?.timeoutMs??0,a=null,o=this.requestPromises.size,s=Date.now(),c=Promise.resolve();return console.debug(`mcp_request_enqueued`),{request:{id:r,method:e,params:t},promise:c}}",
     "sendRequest(e,t,n){let{request:r,promise:i}=this.createRequest(e,t,n);this.dispatchMessage(`mcp-request`,{request:r,hostId:this.hostId});return i}}",
-    "new Client().sendRequest(`thread/start`,{dynamicTools:[{type:`namespace`,name:`codex_app`,tools:[{type:`function`,name:`good`,inputSchema:{type:`object`}},{type:`function`,name:`snake`,input_schema:{type:`object`}},{type:`function`,name:`params`,parameters:{type:`object`}},{type:`function`,name:`bad`},{type:`other`,name:`untouched`}]}]});"
+    "new Client().sendRequest(`thread/start`,{dynamicTools:[{type:`namespace`,name:`codex_app`,description:`Desktop tools`,tools:[{type:`function`,name:`good`,description:`Good`,inputSchema:{type:`object`}},{type:`function`,name:`snake`,input_schema:{type:`object`}},{type:`function`,name:`params`,parameters:{type:`object`}},{type:`function`,name:`bad`,deferLoading:!0},{type:`other`,name:`untouched`}]},{name:`legacyGrouped`,namespace:`codex_app`,parameters:{type:`object`}},{name:`top`,parameters:{type:`object`}}]});"
   ].join("");
 
   const patched = patchDynamicToolThreadStartRequestSource(source);
@@ -566,10 +586,15 @@ test("patchDynamicToolThreadStartRequestSource normalizes final thread/start par
   const tools = context.globalThis.sent.payload.request.params.dynamicTools;
 
   assert.equal(hasUnguardedDynamicToolThreadStartRequestSource(patched), false);
-  assert.equal(JSON.stringify(tools.map(tool => tool.name)), JSON.stringify(["good", "snake", "params", "bad"]));
-  assert.equal(tools.every(tool => tool.type === "function"), true);
-  assert.equal(tools.every(tool => tool.inputSchema?.type === "object"), true);
-  assert.equal(tools.every(tool => tool.namespace === "codex_app"), true);
+  assertCanonicalDynamicTools(tools);
+  assert.equal(JSON.stringify(tools.map(tool => tool.name)), JSON.stringify(["codex_app", "top"]));
+  assert.equal(tools[0].description, "Desktop tools");
+  assert.equal(JSON.stringify(tools[0].tools.map(tool => tool.name)), JSON.stringify(["good", "snake", "params", "bad", "legacyGrouped"]));
+  assert.equal(tools[0].tools.every(tool => tool.type === "function"), true);
+  assert.equal(tools[0].tools.every(tool => tool.inputSchema?.type === "object"), true);
+  assert.equal(tools[0].tools.find(tool => tool.name === "bad").deferLoading, true);
+  assert.equal(tools[1].type, "function");
+  assert.equal(tools[1].inputSchema.type, "object");
 });
 
 test("patchDynamicToolThreadStartRequestSource is idempotent", () => {
