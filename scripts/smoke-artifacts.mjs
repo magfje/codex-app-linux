@@ -325,7 +325,7 @@ export function evaluateBundledCodexLauncherSource(source) {
 }
 
 async function smokeDesktopBinary(executablePath, resourcesDir) {
-  const result = await runCommand(executablePath, ["--no-sandbox"], {
+  const result = await runCommand(executablePath, [], {
     capture: true,
     timeoutMs: 8000,
     env: {

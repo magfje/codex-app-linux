@@ -28,6 +28,9 @@ export default {
     output: outputDir
   },
   electronVersion,
+  toolsets: {
+    appimage: "1.0.3"
+  },
   npmRebuild: false,
   buildDependenciesFromSource: false,
   asar: true,

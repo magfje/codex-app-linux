@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs/promises";
 
 import {
   evaluateBundledCodexLauncherSource,
@@ -91,6 +92,15 @@ test("desktop boot smoke rejects native failed-start dialogs", () => {
     }),
     /desktop binary showed startup failure dialog/
   );
+});
+
+test("desktop artifact smoke does not disable the Chromium sandbox", async () => {
+  const source = await fs.readFile(
+    new URL("../scripts/smoke-artifacts.mjs", import.meta.url),
+    "utf8"
+  );
+
+  assert.doesNotMatch(source, /runCommand\(executablePath, \["--no-sandbox"\]/);
 });
 
 test("bundled Codex launcher smoke rejects PATH-first wrappers", () => {
