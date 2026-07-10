@@ -1,5 +1,10 @@
 const fs = require("node:fs/promises");
 const path = require("node:path");
+const {
+  flipFuses,
+  FuseVersion,
+  FuseV1Options
+} = require("@electron/fuses");
 
 module.exports = async function afterPack(context) {
   if (context.electronPlatformName !== "linux") {
@@ -16,17 +21,32 @@ module.exports = async function afterPack(context) {
   const binaryPath = path.join(context.appOutDir, `${executableName}-bin`);
 
   if (await isWrappedLauncher(launcherPath, binaryPath)) {
+    await hardenElectronFuses(binaryPath);
     await ensureCodexCompatibilitySymlink(context.appOutDir, path.basename(binaryPath));
     return;
   }
 
   await fs.rm(binaryPath, { force: true });
   await fs.rename(launcherPath, binaryPath);
+  await hardenElectronFuses(binaryPath);
   await fs.writeFile(launcherPath, wrapperScript(path.basename(binaryPath)), {
     mode: 0o755
   });
   await ensureCodexCompatibilitySymlink(context.appOutDir, path.basename(binaryPath));
 };
+
+async function hardenElectronFuses(binaryPath) {
+  await flipFuses(binaryPath, {
+    version: FuseVersion.V1,
+    [FuseV1Options.RunAsNode]: false,
+    [FuseV1Options.EnableNodeOptionsEnvironmentVariable]: false,
+    [FuseV1Options.EnableNodeCliInspectArguments]: false,
+    [FuseV1Options.OnlyLoadAppFromAsar]: true,
+    [FuseV1Options.GrantFileProtocolExtraPrivileges]: false
+  });
+}
+
+module.exports.hardenElectronFuses = hardenElectronFuses;
 
 async function copyExtraResources(appOutDir) {
   const extraResourcesDir = process.env.CODEX_STAGE_RESOURCES_DIR;

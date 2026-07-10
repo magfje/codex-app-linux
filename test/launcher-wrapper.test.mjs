@@ -6,6 +6,7 @@ import path from "node:path";
 import { spawn } from "node:child_process";
 
 import afterPack from "../scripts/electron-builder-after-pack.cjs";
+import { FuseV1Options, getCurrentFuseWire } from "@electron/fuses";
 import {
   ensureCodexCompatibilitySymlink,
   patchCodexPlusPlusInstallerSource
@@ -160,7 +161,13 @@ test("afterPack creates codex compatibility symlink to electron binary", async (
   const executableName = "codex-app-linux-beta";
 
   await fs.mkdir(appOutDir, { recursive: true });
-  await fs.writeFile(path.join(appOutDir, executableName), "#!/bin/sh\n", { mode: 0o755 });
+  const sentinel = "dL7pKGdnNz796PbbjQWNKmHXBZaB9tsX";
+  const initialFuseWire = Buffer.from([1, 8, ...Buffer.from("10110101")]);
+  await fs.writeFile(
+    path.join(appOutDir, executableName),
+    Buffer.concat([Buffer.from(`fake-electron-${sentinel}`), initialFuseWire]),
+    { mode: 0o755 }
+  );
 
   await afterPack({
     electronPlatformName: "linux",
@@ -176,6 +183,18 @@ test("afterPack creates codex compatibility symlink to electron binary", async (
   assert.equal(
     await fs.readlink(path.join(appOutDir, "codex")),
     `${executableName}-bin`
+  );
+  const fuseWire = await getCurrentFuseWire(path.join(appOutDir, `${executableName}-bin`));
+  assert.equal(fuseWire[FuseV1Options.RunAsNode], "0".charCodeAt(0));
+  assert.equal(
+    fuseWire[FuseV1Options.EnableNodeOptionsEnvironmentVariable],
+    "0".charCodeAt(0)
+  );
+  assert.equal(fuseWire[FuseV1Options.EnableNodeCliInspectArguments], "0".charCodeAt(0));
+  assert.equal(fuseWire[FuseV1Options.OnlyLoadAppFromAsar], "1".charCodeAt(0));
+  assert.equal(
+    fuseWire[FuseV1Options.GrantFileProtocolExtraPrivileges],
+    "0".charCodeAt(0)
   );
 });
 
