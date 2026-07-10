@@ -36,7 +36,7 @@ export default {
     grantFileProtocolExtraPrivileges: false
   },
   toolsets: {
-    appimage: "1.0.3"
+    appimage: "1.0.2"
   },
   npmRebuild: false,
   buildDependenciesFromSource: false,
