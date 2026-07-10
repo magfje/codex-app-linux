@@ -1,6 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs/promises";
+import { createRequire } from "node:module";
+import os from "node:os";
+import path from "node:path";
 import vm from "node:vm";
 
 import {
@@ -32,6 +35,7 @@ import {
 const openTargetResolverSource =
   "function W(e){let t=which.default.sync(e,{nothrow:!0});return typeof t==`string`&&fs.existsSync(t)?t:null}";
 const withOpenTargetResolver = parts => [openTargetResolverSource, ...parts].join(";");
+const require = createRequire(import.meta.url);
 
 const assertCanonicalDynamicTools = tools => {
   const hasLegacyFields = tool =>
@@ -59,13 +63,16 @@ test("patchLinuxOpenTargetsSource adds Linux editor targets and exposes app path
 
   const patched = patchLinuxOpenTargetsSource(source);
 
+  assert.match(patched, /__codexLinuxFileManager=\{id:`fileManager`,platforms:\{linux:/);
+  assert.match(patched, /detect:\(\)=>W\(`xdg-open`\)/);
+  assert.match(patched, /icon:`apps\/file-explorer\.png`,kind:`fileManager`/);
   assert.match(patched, /__codexLinuxVSCode=\{id:`vscode`,platforms:\{linux:/);
   assert.match(patched, /__codexLinuxCursor=\{id:`cursor`,platforms:\{linux:/);
   assert.match(patched, /__codexLinuxZed=\{id:`zed`,platforms:\{linux:/);
   assert.match(patched, /__codexLinuxNvim=\{id:`nvim`,platforms:\{linux:/);
   assert.match(
     patched,
-    /var wd=\[__codexLinuxVSCode,__codexLinuxVSCodeInsiders,__codexLinuxCursor,__codexLinuxZed,__codexLinuxNvim,nd,id/
+    /var wd=\[__codexLinuxFileManager,__codexLinuxVSCode,__codexLinuxVSCodeInsiders,__codexLinuxCursor,__codexLinuxZed,__codexLinuxNvim,nd,id/
   );
   assert.match(
     patched,
@@ -92,6 +99,41 @@ test("patchLinuxOpenTargetsSource is idempotent for target definitions", () => {
   assert.equal(repatched.match(/__codexLinuxVSCode=\{id:`vscode`,platforms:\{linux:/g).length, 1);
 });
 
+test("Linux file manager target opens the containing directory with xdg-open", async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-linux-file-manager-"));
+  const filePath = path.join(root, "notes.txt");
+  await fs.writeFile(filePath, "hello");
+  const source = withOpenTargetResolver([
+    "var wd=[nd,id],Td=t.kr(`open-in-targets`);function Ed(e){return wd.flatMap(t=>{let n=t.platforms[e];return n?[{id:t.id,...n}]:[]})}",
+    "async function Fd(e,t,n,r,i,a,o){let s={args:()=>[],env:()=>({})},c=`open`;await ol(c,s.args(t,r,i,a,o),{env:s.env?.()})}",
+    "targets:[...o.map(({id:e,label:t,icon:n,kind:r,hidden:i})=>({id:e,target:e,label:t,icon:n,kind:r,hidden:i,available:s.has(e),default:c===e||void 0})),...p]"
+  ]);
+  const patched = patchLinuxOpenTargetsSource(source);
+  const start = patched.indexOf("var __codexLinux");
+  const end = patched.indexOf(";var wd=");
+  const calls = [];
+  const context = {
+    globalThis: {},
+    process,
+    require,
+    W: command => command === "xdg-open" ? "/usr/bin/xdg-open" : null,
+    ol: async (command, args) => calls.push({ command, args })
+  };
+
+  vm.runInNewContext(
+    `${patched.slice(start, end)};globalThis.target=__codexLinuxFileManager`,
+    context
+  );
+  await context.globalThis.target.platforms.linux.open({
+    command: "/usr/bin/xdg-open",
+    path: filePath
+  });
+
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].command, "/usr/bin/xdg-open");
+  assert.deepEqual([...calls[0].args], [root]);
+});
+
 test("patchLinuxOpenTargetsSource accepts alternate minified logger names", () => {
   const source = withOpenTargetResolver([
     "var Cd=[td,rd,$u,au,Il,Uu,_d,od,Pl,_u,Ku,lu,Rl,mu,ru,cd,yu,pu,ad,fd,Tu,Eu,Du,Ou,ku,Au,ju,Mu,Yu],wd=t.Or(`open-in-targets`);function Td(e){return Cd.flatMap(t=>{let n=t.platforms[e];return n?[{id:t.id,...n}]:[]})}",
@@ -103,7 +145,7 @@ test("patchLinuxOpenTargetsSource accepts alternate minified logger names", () =
 
   assert.match(
     patched,
-    /var Cd=\[__codexLinuxVSCode,__codexLinuxVSCodeInsiders,__codexLinuxCursor,__codexLinuxZed,__codexLinuxNvim,td,rd/
+    /var Cd=\[__codexLinuxFileManager,__codexLinuxVSCode,__codexLinuxVSCodeInsiders,__codexLinuxCursor,__codexLinuxZed,__codexLinuxNvim,td,rd/
   );
 });
 
@@ -118,7 +160,7 @@ test("patchLinuxOpenTargetsSource accepts upstream electron 42 registry shape", 
 
   assert.match(
     patched,
-    /var Wk=\[__codexLinuxVSCode,__codexLinuxVSCodeInsiders,__codexLinuxCursor,__codexLinuxZed,__codexLinuxNvim,Tk,Dk/
+    /var Wk=\[__codexLinuxFileManager,__codexLinuxVSCode,__codexLinuxVSCodeInsiders,__codexLinuxCursor,__codexLinuxZed,__codexLinuxNvim,Tk,Dk/
   );
   assert.match(
     patched,
@@ -137,7 +179,7 @@ test("patchLinuxOpenTargetsSource accepts upstream dispatcher runner shape", () 
 
   assert.match(
     patched,
-    /var kN=\[__codexLinuxVSCode,__codexLinuxVSCodeInsiders,__codexLinuxCursor,__codexLinuxZed,__codexLinuxNvim,cN,uN/
+    /var kN=\[__codexLinuxFileManager,__codexLinuxVSCode,__codexLinuxVSCodeInsiders,__codexLinuxCursor,__codexLinuxZed,__codexLinuxNvim,cN,uN/
   );
   assert.match(
     patched,
@@ -157,7 +199,7 @@ test("patchLinuxOpenTargetsSource accepts bare open-target logger and discovered
 
   assert.match(
     patched,
-    /var GN=\[__codexLinuxVSCode,__codexLinuxVSCodeInsiders,__codexLinuxCursor,__codexLinuxZed,__codexLinuxNvim,wN,EN/
+    /var GN=\[__codexLinuxFileManager,__codexLinuxVSCode,__codexLinuxVSCodeInsiders,__codexLinuxCursor,__codexLinuxZed,__codexLinuxNvim,wN,EN/
   );
   assert.match(patched, /detect:\(\)=>os\(`code`\)/);
   assert.match(patched, /__codexLinuxShellQuote=/);
@@ -178,7 +220,7 @@ test("patchLinuxOpenTargetsSource accepts latest real upstream dispatcher fixtur
 
   assert.match(
     patched,
-    /var kN=\[__codexLinuxVSCode,__codexLinuxVSCodeInsiders,__codexLinuxCursor,__codexLinuxZed,__codexLinuxNvim,cN,uN/
+    /var kN=\[__codexLinuxFileManager,__codexLinuxVSCode,__codexLinuxVSCodeInsiders,__codexLinuxCursor,__codexLinuxZed,__codexLinuxNvim,cN,uN/
   );
   assert.match(
     patched,

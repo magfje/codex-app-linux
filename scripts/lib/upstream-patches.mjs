@@ -2,8 +2,13 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { parse } from "acorn";
 
-const linuxOpenTargetDefinitions = ({ openCommandName, executableResolverName }) => [
-  "var __codexLinuxOpenTargetGotoArgs=(e,t)=>t?[`--goto`,`${e}:${t.line}:${t.column}`]:[e]",
+const linuxFileManagerDefinitions = ({ openCommandName, executableResolverName }) => [
+  `__codexLinuxOpenTargetRunFileManager=async({command:e,path:t})=>{let n=require(\`node:fs\`),r=require(\`node:path\`),i=t;while(!n.existsSync(i)){let e=r.dirname(i);if(e===i)break;i=e}n.existsSync(i)&&n.statSync(i).isFile()&&(i=r.dirname(i));await ${openCommandName}(e,[i])}`,
+  `__codexLinuxFileManager={id:\`fileManager\`,platforms:{linux:{label:\`File Manager\`,icon:\`apps/file-explorer.png\`,kind:\`fileManager\`,detect:()=>${executableResolverName}(\`xdg-open\`),args:e=>[e],open:__codexLinuxOpenTargetRunFileManager}}}`
+];
+const linuxOpenTargetDefinitions = ({ openCommandName, executableResolverName }) => `var ${[
+  ...linuxFileManagerDefinitions({ openCommandName, executableResolverName }),
+  "__codexLinuxOpenTargetGotoArgs=(e,t)=>t?[`--goto`,`${e}:${t.line}:${t.column}`]:[e]",
   "__codexLinuxOpenTargetColonArgs=(e,t)=>t?[`${e}:${t.line}:${t.column}`]:[e]",
   `__codexLinuxOpenTargetTerminal=()=>{let e=process.env.TERMINAL?.trim();if(e&&${executableResolverName}(e))return{command:${executableResolverName}(e),args:e=>[\`-e\`,process.env.SHELL?.trim()||\`/bin/sh\`,\`-lc\`,e]};for(let e of [[\`ghostty\`,e=>[\`-e\`,process.env.SHELL?.trim()||\`/bin/sh\`,\`-lc\`,e]],[\`kitty\`,e=>[\`-e\`,process.env.SHELL?.trim()||\`/bin/sh\`,\`-lc\`,e]],[\`alacritty\`,e=>[\`-e\`,process.env.SHELL?.trim()||\`/bin/sh\`,\`-lc\`,e]],[\`wezterm\`,e=>[\`start\`,\`--\`,process.env.SHELL?.trim()||\`/bin/sh\`,\`-lc\`,e]],[\`gnome-terminal\`,e=>[\`--\`,process.env.SHELL?.trim()||\`/bin/sh\`,\`-lc\`,e]],[\`konsole\`,e=>[\`-e\`,process.env.SHELL?.trim()||\`/bin/sh\`,\`-lc\`,e]],[\`xterm\`,e=>[\`-e\`,process.env.SHELL?.trim()||\`/bin/sh\`,\`-lc\`,e]]]){let t=${executableResolverName}(e[0]);if(t)return{command:t,args:e[1]}}return null}`,
   "__codexLinuxOpenTargetNvimArgs=(e,t)=>t?[`+call cursor(${t.line},${t.column})`,e]:[e]",
@@ -15,7 +20,7 @@ const linuxOpenTargetDefinitions = ({ openCommandName, executableResolverName })
   `__codexLinuxCursor={id:\`cursor\`,platforms:{linux:{label:\`Cursor\`,icon:\`apps/cursor.png\`,kind:\`editor\`,detect:()=>${executableResolverName}(\`cursor\`),args:__codexLinuxOpenTargetGotoArgs}}}`,
   `__codexLinuxZed={id:\`zed\`,platforms:{linux:{label:\`Zed\`,icon:\`apps/zed.png\`,kind:\`editor\`,detect:()=>${executableResolverName}(\`zed\`),args:__codexLinuxOpenTargetColonArgs}}}`,
   `__codexLinuxNvim={id:\`nvim\`,platforms:{linux:{label:\`Neovim\`,icon:\`apps/terminal.png\`,kind:\`editor\`,detect:()=>${executableResolverName}(\`nvim\`),args:__codexLinuxOpenTargetNvimArgs,open:__codexLinuxOpenTargetRunNvim}}}`
-].join(",");
+].join(",")}`;
 const openTargetMapRegex =
   /targets:\[\.\.\.([A-Za-z_$][\w$]*)\.map\(\(\{id:([A-Za-z_$][\w$]*),label:([A-Za-z_$][\w$]*),icon:([A-Za-z_$][\w$]*),kind:([A-Za-z_$][\w$]*),hidden:([A-Za-z_$][\w$]*)\}\)=>\(\{id:\2,target:\2,label:\3,icon:\4,kind:\5,hidden:\6,available:([A-Za-z_$][\w$]*)\.has\(\2\),default:([A-Za-z_$][\w$]*)===\2\|\|void 0\}\)\),\.\.\.([A-Za-z_$][\w$]*)\]/;
 const linuxTransparencyPatchedRegex =
@@ -341,12 +346,19 @@ export function applyUpstreamPatchContract(source, contract) {
 function applyLinuxOpenTargetsSource(source) {
   let patched = source;
 
-  if (!patched.includes("__codexLinuxVSCode=")) {
+  if (!patched.includes("__codexLinuxFileManager=")) {
     const openTargets = findOpenTargetRegistry(patched);
+    const hasEditorTargets = patched.includes("__codexLinuxVSCode=");
+    const definitions = hasEditorTargets
+      ? `var ${linuxFileManagerDefinitions(openTargets).join(",")}`
+      : linuxOpenTargetDefinitions(openTargets);
+    const targetPrefix = hasEditorTargets
+      ? "__codexLinuxFileManager,"
+      : "__codexLinuxFileManager,__codexLinuxVSCode,__codexLinuxVSCodeInsiders,__codexLinuxCursor,__codexLinuxZed,__codexLinuxNvim,";
     patched = replaceOnce(
       patched,
       openTargets.anchor,
-      `${linuxOpenTargetDefinitions(openTargets)};${openTargets.anchor.replace("[", "[__codexLinuxVSCode,__codexLinuxVSCodeInsiders,__codexLinuxCursor,__codexLinuxZed,__codexLinuxNvim,")}`
+      `${definitions};${openTargets.anchor.replace("[", `[${targetPrefix}`)}`
     );
   }
 
@@ -1105,8 +1117,12 @@ function assertOpenTargetsBefore(source) {
 }
 
 function assertOpenTargetsAfter(source) {
-  if (!source.includes("__codexLinuxVSCode=")) {
+  if (!source.includes("__codexLinuxVSCode=") || !source.includes("__codexLinuxFileManager=")) {
     throw new Error("missing Linux open target definitions");
+  }
+
+  if (!source.includes("detect:()=>") || !source.includes("(`xdg-open`)")) {
+    throw new Error("missing Linux default file manager target");
   }
 
   if (!source.includes("appPath:process.platform===`linux`")) {
