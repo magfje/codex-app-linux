@@ -4,6 +4,7 @@ import path from "node:path";
 import process from "node:process";
 import { spawn, spawnSync } from "node:child_process";
 import * as asar from "@electron/asar";
+import { FuseV1Options, getCurrentFuseWire } from "@electron/fuses";
 
 import { channelPaths, getChannel, parseArgs, projectRoot } from "./lib/config.mjs";
 import {
@@ -68,6 +69,9 @@ export async function smokeLinuxArtifacts({
   );
   await runCheck(summary, "bundled-codex-launcher", () =>
     assertBundledCodexLauncher(linuxDir, executablePath, resourcesDir)
+  );
+  await runCheck(summary, "electron-fuses", () =>
+    assertElectronFuses(path.join(linuxDir, `${executableName}-bin`))
   );
   await runCheck(summary, "node_repl", () =>
     smokeNodeRepl(path.join(resourcesDir, "node_repl"))
@@ -300,6 +304,43 @@ async function assertBundledCodexLauncher(linuxDir, executablePath, resourcesDir
     launcher: path.relative(linuxDir, executablePath),
     bundledCodex: path.relative(linuxDir, bundledCodexPath)
   };
+}
+
+async function assertElectronFuses(electronBinaryPath) {
+  const fuseWire = await getCurrentFuseWire(electronBinaryPath);
+  return evaluateElectronFuseContract(fuseWire);
+}
+
+export function evaluateElectronFuseContract(fuseWire) {
+  const disabled = "0".charCodeAt(0);
+  const enabled = "1".charCodeAt(0);
+  const expected = [
+    [FuseV1Options.RunAsNode, disabled, "RunAsNode must be disabled"],
+    [
+      FuseV1Options.EnableNodeOptionsEnvironmentVariable,
+      disabled,
+      "NODE_OPTIONS environment support must be disabled"
+    ],
+    [
+      FuseV1Options.EnableNodeCliInspectArguments,
+      disabled,
+      "Node CLI inspector arguments must be disabled"
+    ],
+    [FuseV1Options.OnlyLoadAppFromAsar, enabled, "OnlyLoadAppFromAsar must be enabled"],
+    [
+      FuseV1Options.GrantFileProtocolExtraPrivileges,
+      disabled,
+      "extra file:// protocol privileges must be disabled"
+    ]
+  ];
+
+  for (const [fuse, state, message] of expected) {
+    if (fuseWire[fuse] !== state) {
+      throw new Error(message);
+    }
+  }
+
+  return { checked: expected.length };
 }
 
 export function evaluateBundledCodexLauncherSource(source) {

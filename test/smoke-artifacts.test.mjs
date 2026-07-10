@@ -6,6 +6,7 @@ import {
   evaluateBundledCodexLauncherSource,
   evaluateBrowserClientNativePipeCompatibilitySource,
   evaluateDesktopBootResult,
+  evaluateElectronFuseContract,
   evaluateLinuxPrimaryWindowBackgroundThrottlingContractSources,
   evaluateLinuxWindowFocusableContractSources,
   hasDynamicToolSchemaCandidateSource
@@ -101,6 +102,32 @@ test("desktop artifact smoke does not disable the Chromium sandbox", async () =>
   );
 
   assert.doesNotMatch(source, /runCommand\(executablePath, \["--no-sandbox"\]/);
+});
+
+test("Electron fuse smoke requires hardened production defaults", () => {
+  const disabled = "0".charCodeAt(0);
+  const enabled = "1".charCodeAt(0);
+
+  assert.deepEqual(
+    evaluateElectronFuseContract({
+      0: disabled,
+      2: disabled,
+      3: disabled,
+      5: enabled,
+      7: disabled
+    }),
+    { checked: 5 }
+  );
+  assert.throws(
+    () => evaluateElectronFuseContract({
+      0: enabled,
+      2: disabled,
+      3: disabled,
+      5: enabled,
+      7: disabled
+    }),
+    /RunAsNode must be disabled/
+  );
 });
 
 test("bundled Codex launcher smoke rejects PATH-first wrappers", () => {

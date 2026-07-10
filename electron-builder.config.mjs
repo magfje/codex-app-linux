@@ -28,6 +28,13 @@ export default {
     output: outputDir
   },
   electronVersion,
+  electronFuses: {
+    runAsNode: false,
+    enableNodeOptionsEnvironmentVariable: false,
+    enableNodeCliInspectArguments: false,
+    onlyLoadAppFromAsar: true,
+    grantFileProtocolExtraPrivileges: false
+  },
   toolsets: {
     appimage: "1.0.3"
   },
