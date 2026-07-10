@@ -5,6 +5,7 @@ import {
   evaluateBundledCodexLauncherSource,
   evaluateBrowserClientNativePipeCompatibilitySource,
   evaluateDesktopBootResult,
+  evaluateLinuxPrimaryWindowBackgroundThrottlingContractSources,
   evaluateLinuxWindowFocusableContractSources,
   hasDynamicToolSchemaCandidateSource
 } from "../scripts/smoke-artifacts.mjs";
@@ -157,6 +158,45 @@ test("Linux window focusable smoke accepts patched and legacy-safe defaults", ()
     ]),
     {
       checked: 2,
+      unsafe: []
+    }
+  );
+});
+
+test("Linux primary window smoke rejects background-throttled queued work", () => {
+  const source = [
+    "function createWindow(e={}){",
+    "let{focusable:m}=e,k={contextIsolation:!0};",
+    "new a.BrowserWindow({title:`Codex`,focusable:m??!0,webPreferences:k})",
+    "}"
+  ].join("");
+
+  assert.deepEqual(
+    evaluateLinuxPrimaryWindowBackgroundThrottlingContractSources([
+      { file: ".vite/build/main.js", source }
+    ]),
+    {
+      checked: 1,
+      unsafe: [".vite/build/main.js"]
+    }
+  );
+});
+
+test("Linux primary window smoke accepts unthrottled queued work", () => {
+  const source = [
+    "function createWindow(e={}){",
+    "let{focusable:m}=e,k={contextIsolation:!0};",
+    "new a.BrowserWindow({title:`Codex`,focusable:m??!0,webPreferences:process.platform===`linux`?{...k,backgroundThrottling:!1}:k})",
+    "}"
+  ].join("");
+
+  assert.deepEqual(
+    evaluateLinuxPrimaryWindowBackgroundThrottlingContractSources([
+      { file: ".vite/build/main.js", source },
+      { file: ".vite/build/overlay.js", source: "new a.BrowserWindow({webPreferences:{}})" }
+    ]),
+    {
+      checked: 1,
       unsafe: []
     }
   );

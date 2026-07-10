@@ -7,11 +7,13 @@ import * as asar from "@electron/asar";
 
 import { channelPaths, getChannel, parseArgs, projectRoot } from "./lib/config.mjs";
 import {
+  hasLinuxPrimaryWindowBackgroundThrottlingContractSource,
   hasLinuxWindowFocusableContractSource,
   hasUnguardedDynamicToolSchemaContractSource,
   hasUnguardedDynamicToolStartResponseSource,
   hasUnguardedDynamicToolThreadStartBridgeSource,
   hasUnguardedDynamicToolThreadStartRequestSource,
+  hasUnguardedLinuxPrimaryWindowBackgroundThrottlingSource,
   hasUnguardedLinuxWindowFocusableSource,
   hasUnguardedOwlFeatureBindingSource
 } from "./lib/upstream-patches.mjs";
@@ -81,6 +83,9 @@ export async function smokeLinuxArtifacts({
   );
   await runCheck(summary, "linux-window-focusable-contract", () =>
     assertLinuxWindowFocusableContract(resourcesDir)
+  );
+  await runCheck(summary, "linux-primary-window-background-throttling", () =>
+    assertLinuxPrimaryWindowBackgroundThrottlingContract(resourcesDir)
   );
   await runCheck(summary, "dynamic-tool-schema-contract", () =>
     assertDynamicToolSchemaContract(resourcesDir)
@@ -447,6 +452,25 @@ async function assertLinuxWindowFocusableContract(resourcesDir) {
   };
 }
 
+async function assertLinuxPrimaryWindowBackgroundThrottlingContract(resourcesDir) {
+  const appAsarPath = path.join(resourcesDir, "app.asar");
+  const unsafeSources = await findLinuxPrimaryWindowBackgroundThrottlingContractSources(appAsarPath);
+
+  if (unsafeSources.unsafe.length > 0) {
+    throw new Error(
+      `Linux primary BrowserWindow must disable background throttling; ${unsafeSources.unsafe.slice(0, 5).join(", ")} can pause queued follow-ups until the window becomes active`
+    );
+  }
+
+  if (unsafeSources.checked === 0) {
+    throw new Error("Unable to find Linux primary BrowserWindow background throttling contract in app.asar");
+  }
+
+  return {
+    checked: unsafeSources.checked
+  };
+}
+
 async function assertDynamicToolStartResponseContract(resourcesDir) {
   const appAsarPath = path.join(resourcesDir, "app.asar");
   const unsafeSources = await findUnguardedDynamicToolStartResponseSources(appAsarPath);
@@ -532,6 +556,58 @@ async function findLinuxWindowFocusableContractSources(appAsarPath) {
   }
 
   return evaluateLinuxWindowFocusableContractSources(sources);
+}
+
+async function findLinuxPrimaryWindowBackgroundThrottlingContractSources(appAsarPath) {
+  const files = await asar.listPackage(appAsarPath);
+  const sources = [];
+
+  for (const file of files) {
+    if (!/\.(?:js|mjs|cjs)$/i.test(file)) {
+      continue;
+    }
+
+    let source;
+
+    try {
+      source = asar.extractFile(appAsarPath, file.replace(/^\//, "")).toString("utf8");
+    } catch {
+      continue;
+    }
+
+    if (!source.includes("BrowserWindow") || !source.includes("webPreferences")) {
+      continue;
+    }
+
+    sources.push({
+      file: file.replace(/^\//, ""),
+      source
+    });
+  }
+
+  return evaluateLinuxPrimaryWindowBackgroundThrottlingContractSources(sources);
+}
+
+export function evaluateLinuxPrimaryWindowBackgroundThrottlingContractSources(sources) {
+  const unsafe = [];
+  let checked = 0;
+
+  for (const { file, source } of sources) {
+    if (!hasLinuxPrimaryWindowBackgroundThrottlingContractSource(source)) {
+      continue;
+    }
+
+    checked++;
+
+    if (hasUnguardedLinuxPrimaryWindowBackgroundThrottlingSource(source)) {
+      unsafe.push(file);
+    }
+  }
+
+  return {
+    checked,
+    unsafe
+  };
 }
 
 export function evaluateLinuxWindowFocusableContractSources(sources) {
