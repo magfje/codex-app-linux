@@ -21,6 +21,8 @@ test("release workflow publishes the stable build to the personal pacman reposit
   assert.match(prodJob, /gh release upload pacman-repo/);
   assert.match(prodJob, /archlinux:base-devel/);
   assert.match(prodJob, /sudo chmod 4755 .*chrome-sandbox/);
+  assert.match(workflow, /node scripts\/canary\.mjs \\\n\s+--no-browser/);
+  assert.match(prodJob, /scripts\/smoke-artifacts\.mjs \\\n\s+--channel "prod" \\\n\s+--no-browser/);
   assert.ok(versionedRelease < packageBuild);
   assert.ok(packageBuild < repositoryPublish);
   assert.doesNotMatch(workflow, /npm publish|aur\.archlinux\.org|AUR_SSH_PRIVATE_KEY/);
