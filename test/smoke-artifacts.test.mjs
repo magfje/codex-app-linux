@@ -103,6 +103,12 @@ test("desktop artifact smoke does not disable the Chromium sandbox", async () =>
   );
 
   assert.doesNotMatch(source, /runCommand\(executablePath, \["--no-sandbox"\]/);
+
+  const builderConfig = await fs.readFile(
+    new URL("../electron-builder.config.mjs", import.meta.url),
+    "utf8"
+  );
+  assert.match(builderConfig, /appImage:\s*\{\s*executableArgs: \["--enable-sandbox"\]/);
 });
 
 test("Electron fuse smoke requires hardened production defaults", () => {

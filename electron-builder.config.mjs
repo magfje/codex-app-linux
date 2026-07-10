@@ -31,6 +31,9 @@ export default {
   toolsets: {
     appimage: "1.0.2"
   },
+  appImage: {
+    executableArgs: ["--enable-sandbox"]
+  },
   npmRebuild: false,
   buildDependenciesFromSource: false,
   asar: true,
