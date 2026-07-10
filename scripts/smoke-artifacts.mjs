@@ -91,6 +91,9 @@ export async function smokeLinuxArtifacts({
   await runCheck(summary, "linux-primary-window-background-throttling", () =>
     assertLinuxPrimaryWindowBackgroundThrottlingContract(resourcesDir)
   );
+  await runCheck(summary, "linux-default-file-manager-target", () =>
+    assertLinuxDefaultFileManagerTarget(resourcesDir)
+  );
   await runCheck(summary, "dynamic-tool-schema-contract", () =>
     assertDynamicToolSchemaContract(resourcesDir)
   );
@@ -510,6 +513,46 @@ async function assertLinuxPrimaryWindowBackgroundThrottlingContract(resourcesDir
   return {
     checked: unsafeSources.checked
   };
+}
+
+async function assertLinuxDefaultFileManagerTarget(resourcesDir) {
+  const appAsarPath = path.join(resourcesDir, "app.asar");
+  const files = await asar.listPackage(appAsarPath);
+  const sources = [];
+
+  for (const file of files) {
+    if (!/\.(?:js|mjs|cjs)$/i.test(file)) {
+      continue;
+    }
+
+    let source;
+
+    try {
+      source = asar.extractFile(appAsarPath, file.replace(/^\//, "")).toString("utf8");
+    } catch {
+      continue;
+    }
+
+    if (source.includes("__codexLinuxFileManager") || source.includes("open-in-targets")) {
+      sources.push({ file: file.replace(/^\//, ""), source });
+    }
+  }
+
+  return evaluateLinuxDefaultFileManagerTargetSources(sources);
+}
+
+export function evaluateLinuxDefaultFileManagerTargetSources(sources) {
+  const target = sources.find(({ source }) =>
+    source.includes("__codexLinuxFileManager") &&
+    source.includes("id:`fileManager`") &&
+    source.includes("(`xdg-open`)")
+  );
+
+  if (!target) {
+    throw new Error("Packaged Linux app is missing the default xdg-open file manager target");
+  }
+
+  return { checked: 1, file: target.file };
 }
 
 async function assertDynamicToolStartResponseContract(resourcesDir) {

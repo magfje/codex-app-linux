@@ -7,6 +7,7 @@ import {
   evaluateBrowserClientNativePipeCompatibilitySource,
   evaluateDesktopBootResult,
   evaluateElectronFuseContract,
+  evaluateLinuxDefaultFileManagerTargetSources,
   evaluateLinuxPrimaryWindowBackgroundThrottlingContractSources,
   evaluateLinuxWindowFocusableContractSources,
   hasDynamicToolSchemaCandidateSource
@@ -127,6 +128,23 @@ test("Electron fuse smoke requires hardened production defaults", () => {
       7: disabled
     }),
     /RunAsNode must be disabled/
+  );
+});
+
+test("Linux file manager smoke requires the packaged xdg-open target", () => {
+  const source = "var __codexLinuxFileManager={id:`fileManager`,detect:()=>W(`xdg-open`)}";
+
+  assert.deepEqual(
+    evaluateLinuxDefaultFileManagerTargetSources([
+      { file: ".vite/build/main.js", source }
+    ]),
+    { checked: 1, file: ".vite/build/main.js" }
+  );
+  assert.throws(
+    () => evaluateLinuxDefaultFileManagerTargetSources([
+      { file: ".vite/build/main.js", source: "var targets=[]" }
+    ]),
+    /missing the default xdg-open file manager target/
   );
 });
 
