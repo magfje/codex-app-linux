@@ -5,7 +5,6 @@ import { getChannel, parseArgs } from "./lib/config.mjs";
 const args = parseArgs(process.argv.slice(2));
 const channel = getChannel(String(args.channel || ""));
 const packageVersion = String(args["package-version"] || "");
-const aurPackageName = String(args["aur-package-name"] || channel.aurPackageName || "");
 
 if (!channel.name) {
   throw new Error("--channel is required");
@@ -16,31 +15,29 @@ if (!packageVersion) {
 }
 
 const lines = [
-  `Automated Linux release for ${channel.name}.`,
+  `Automated personal Linux release for ${channel.name}.`,
   "",
-  "## Install",
+  "## Arch Linux",
   "",
-  "npm:",
-  "```bash",
-  channel.distTag === "latest"
-    ? "npm i -g codex-app-linux"
-    : "npm i -g codex-app-linux@beta",
-  channel.distTag === "latest" ? "npx codex-app-linux" : "npx codex-app-linux@beta",
-  "```"
+  channel.name === "prod"
+    ? "The stable build is published through the `codex-personal` pacman repository."
+    : "Beta builds are available as release assets; the personal pacman repository tracks stable only."
 ];
 
-if (aurPackageName) {
+if (channel.name === "prod") {
   lines.push(
     "",
-    "AUR:",
-    `- https://aur.archlinux.org/packages/${aurPackageName}`
+    "After the one-time repository setup:",
+    "```bash",
+    "sudo pacman -Syu codex-app-unofficial",
+    "```"
   );
 }
 
 lines.push(
   "",
   "Version:",
-  `- npm package: \`${packageVersion}\``
+  `- package: \`${packageVersion}\``
 );
 
 console.log(lines.join("\n"));

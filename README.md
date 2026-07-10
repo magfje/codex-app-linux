@@ -1,6 +1,6 @@
 # codex-app-linux
 
-Run the Codex desktop app on Linux via npm, aur, and a nix flake.
+Personal Linux packaging for the Codex desktop app, including machine-specific fixes.
 
 > ‼️ We welcome platform specific PRs/issues/reproductions! Maintainer uses nix/arch (btw).
 
@@ -14,45 +14,22 @@ Run the Codex desktop app on Linux via npm, aur, and a nix flake.
 
 ## Quick Start
 
-### aur
+### Arch Linux / pacman
 
-- Latest
-    ```bash
-    yay -S codex-app-unofficial
-    ```
+Add the personal repository and install Codex once:
 
-- Beta
-    ```bash
-    yay -S codex-app-beta-unofficial
-    ```
+```bash
+./scripts/setup-personal-pacman-repo.sh
+```
 
-### npm
+After that, Codex updates with the rest of the system:
 
-- Install globally
-    ```bash
-    npm i -g codex-app-linux@latest
-    ```
-    ```bash
-    npm i -g codex-app-linux@beta
-    ```
+```bash
+sudo pacman -Syu
+```
 
-- Run once with `npx`:
-    ```bash
-    npx codex-app-linux@latest
-    ```
-    ```bash
-    npx codex-app-linux@beta
-    ```
-
-- Browser mode from npm (**note: many features are missing, don't expect much**):
-    ```bash
-    npx codex-app-linux web --open
-    ```
-
-- Disable browser auth entirely (unsafe; only behind a trusted reverse proxy / tailnet):
-    ```bash
-    npx codex-app-linux web --dangerously-disable-auth true
-    ```
+The repository is unsigned and scoped to this personal fork. Its package artifacts are
+served over HTTPS from the fixed `pacman-repo` GitHub Release.
 
 ## Requirements
 
@@ -64,12 +41,13 @@ Otherwise it uses the bundled `resources/codex`, then falls back to `which codex
 
 ## What This Repo Does
 
-This repo builds and publishes the Linux release pipeline for Codex desktop:
+This fork builds and publishes a personal Linux release pipeline for Codex desktop:
 
 - tracks upstream `prod` and `beta` appcast feeds
 - rebuilds the upstream app for Linux x64
 - emits `linux-unpacked` and `AppImage`
-- publishes `codex-app-linux` on npm
+- publishes stable `codex-app-unofficial` packages to the `codex-personal` pacman repository
+- publishes beta builds as GitHub Release assets
 
 ## Repo Commands
 
@@ -86,19 +64,13 @@ GitHub Releases:
 - uploads `AppImage`
 - uploads a tarball of `linux-unpacked`
 
-npm:
-
-- publishes `codex-app-linux`
-- acts as a thin launcher
-- downloads the matching `linux-unpacked` tarball from GitHub Releases on first run
-
-AUR:
+Personal pacman repository:
 
 - publishes binary packages from the same GitHub release tarballs
 - installs the unpacked app into `/opt`
 - installs desktop entry + icon for Arch launchers/menus
 - prod package: `codex-app-unofficial`
-- beta package: `codex-app-beta-unofficial`
+- is consumed directly by pacman, without AUR ownership or an AUR helper
 
 Launcher behavior:
 
@@ -107,11 +79,7 @@ Launcher behavior:
 - finally falls back to `which codex`
 - errors if neither is available
 - extracts `linux-unpacked` into cache on first run
-- npm launches the unpacked binary directly
-- npm also exposes `codex-app-linux web` to serve the bundled UI in a browser
-- browser auth can be disabled explicitly with `--dangerously-disable-auth true`
 - AppImage and `linux-unpacked` release binaries perform the same bundled-first lookup at launch
-- browser mode is npm-only; AUR packages continue to ship desktop launch behavior only
 
 ## GitHub Actions
 
@@ -121,7 +89,9 @@ Workflow: `.github/workflows/release.yml`
 - checks both upstream channels
 - builds `linux-unpacked` and `AppImage`
 - creates/releases tagged GitHub assets
-- publishes `latest` for prod, `beta` for beta
+- publishes versioned GitHub Releases for prod and beta
+- refreshes the fixed `pacman-repo` release for stable packages
+- does not publish to npm or the AUR
 
 ## Nix
 

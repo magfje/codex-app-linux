@@ -6,19 +6,23 @@ import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
 
-test("release workflow refuses existing npm versions before clobbering release assets", async () => {
+test("release workflow publishes the stable build to the personal pacman repository", async () => {
   const workflow = await fs.readFile(".github/workflows/release.yml", "utf8");
-  const guard = "Refuse immutable npm version overwrite";
-  const prodGuard = workflow.indexOf(guard);
-  const betaGuard = workflow.indexOf(guard, prodGuard + guard.length);
-  const prodUpload = workflow.indexOf("gh release upload", prodGuard);
-  const betaUpload = workflow.indexOf("gh release upload", betaGuard);
+  const prodJob = workflow.slice(
+    workflow.indexOf("  publish-prod:"),
+    workflow.indexOf("  publish-beta:")
+  );
+  const versionedRelease = prodJob.indexOf("Create or update GitHub release");
+  const packageBuild = prodJob.indexOf("Build personal pacman package");
+  const repositoryPublish = prodJob.indexOf("Publish personal pacman repository");
 
-  assert.notEqual(prodGuard, -1);
-  assert.notEqual(betaGuard, -1);
-  assert.match(workflow, /npm package version already exists; refusing to clobber/);
-  assert.ok(prodGuard < prodUpload);
-  assert.ok(betaGuard < betaUpload);
+  assert.match(workflow, /CODEX_RELEASE_REPO: "\$\{\{ github\.repository \}\}"/);
+  assert.match(prodJob, /repo-add codex-personal\.db\.tar\.gz/);
+  assert.match(prodJob, /gh release upload pacman-repo/);
+  assert.match(prodJob, /archlinux:base-devel/);
+  assert.ok(versionedRelease < packageBuild);
+  assert.ok(packageBuild < repositoryPublish);
+  assert.doesNotMatch(workflow, /npm publish|aur\.archlinux\.org|AUR_SSH_PRIVATE_KEY/);
 });
 
 test("release workflow runs canary and smoke before publish mutations", async () => {

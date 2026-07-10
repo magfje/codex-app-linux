@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       force:
-        description: Force rebuild/publish even if the npm version already exists
+        description: Force rebuild/publish even if the GitHub release already exists
         required: false
         default: "false"
   schedule:
@@ -21,6 +21,8 @@ jobs:
       beta_version: ${{ steps.state.outputs.beta_version }}
     env:
       NPM_PACKAGE_NAME: "codex-app-linux"
+      CODEX_RELEASE_REPO: "${{ github.repository }}"
+      GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
     steps:
       - uses: actions/checkout@v5
 
@@ -110,12 +112,9 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-      id-token: write
     env:
-      NPM_CONFIG_PROVENANCE: "true"
       NPM_PACKAGE_NAME: "codex-app-linux"
       CODEX_RELEASE_REPO: "${{ github.repository }}"
-      AUR_PUBLISH_ENABLED: "${{ vars.AUR_PUBLISH_ENABLED || '' }}"
     steps:
       - uses: actions/checkout@v5
 
@@ -123,7 +122,6 @@ jobs:
         with:
           node-version: 24
           cache: npm
-          registry-url: https://registry.npmjs.org
 
       - name: Install system deps
         run: sudo apt-get update && sudo apt-get install -y p7zip-full jq libarchive-tools xvfb x11-utils
@@ -150,7 +148,6 @@ jobs:
         run: |
           json="dist/prod-release.json"
           echo "skipped=$(jq -r '.skipped // false' "$json")" >> "$GITHUB_OUTPUT"
-          echo "package_dir=$(jq -r '.packageDir // ""' "$json")" >> "$GITHUB_OUTPUT"
           echo "appimage=$(jq -r '.appImagePath // ""' "$json")" >> "$GITHUB_OUTPUT"
           echo "tarball=$(jq -r '.unpackedTarballPath // ""' "$json")" >> "$GITHUB_OUTPUT"
           echo "icon=$(jq -r '.iconAssetPath // ""' "$json")" >> "$GITHUB_OUTPUT"
@@ -159,7 +156,6 @@ jobs:
           echo "srcinfo=$(jq -r '.aurPackage.srcinfoPath // ""' "$json")" >> "$GITHUB_OUTPUT"
           echo "install_script=$(jq -r '.aurPackage.installPath // ""' "$json")" >> "$GITHUB_OUTPUT"
           echo "aur_package_name=$(jq -r '.aurPackage.pkgname // ""' "$json")" >> "$GITHUB_OUTPUT"
-          echo "aur_url=$(jq -r '.aurPackage.aurUrl // ""' "$json")" >> "$GITHUB_OUTPUT"
           echo "release_tag=$(jq -r '.releaseTag // ""' "$json")" >> "$GITHUB_OUTPUT"
           echo "package_version=$(jq -r '.packageVersion' "$json")" >> "$GITHUB_OUTPUT"
           echo "prerelease=$(jq -r '.prerelease // false' "$json")" >> "$GITHUB_OUTPUT"
@@ -178,17 +174,7 @@ jobs:
           node scripts/release-notes.mjs \
             --channel "prod" \
             --package-version "${{ steps.meta.outputs.package_version }}" \
-            --aur-package-name "${{ steps.meta.outputs.aur_package_name }}" \
             > dist/prod-release-notes.md
-
-      - name: Refuse immutable npm version overwrite
-        if: steps.meta.outputs.skipped != 'true'
-        run: |
-          if npm view "codex-app-linux@${{ steps.meta.outputs.package_version }}" version >/dev/null 2>&1; then
-            echo "::error::npm package version already exists; refusing to clobber matching GitHub release assets"
-            echo "::error::bump CODEX_PACKAGE_REVISION before rebuilding this version"
-            exit 1
-          fi
 
       - name: Upload workflow artifacts
         if: steps.meta.outputs.skipped != 'true'
@@ -230,65 +216,58 @@ jobs:
             "${{ steps.meta.outputs.checksums }}" \
             --clobber
 
-      - name: Publish npm package
+      - name: Build personal pacman package
         if: steps.meta.outputs.skipped != 'true'
         run: |
-          if npm view "codex-app-linux@${{ steps.meta.outputs.package_version }}" version >/dev/null 2>&1; then
-            echo "npm package version already exists; skipping publish"
-            exit 0
-          fi
+          mkdir -p dist/pacman-build dist/pacman-repo
+          cp "${{ steps.meta.outputs.pkgbuild }}" dist/pacman-build/PKGBUILD
+          cp "${{ steps.meta.outputs.install_script }}" \
+            "dist/pacman-build/${{ steps.meta.outputs.aur_package_name }}.install"
 
-          npm publish "${{ steps.meta.outputs.package_dir }}" --provenance --access public --tag latest
+          docker run --rm \
+            -v "$PWD/dist/pacman-build:/build" \
+            -w /build \
+            archlinux:base-devel \
+            bash -lc '
+              useradd -m builder
+              chown -R builder:builder /build
+              su builder -c "makepkg --nodeps --noconfirm --cleanbuild"
+            '
 
-      - name: Publish AUR package
+          cp dist/pacman-build/*.pkg.tar.zst dist/pacman-repo/
+
+          docker run --rm \
+            -v "$PWD/dist/pacman-repo:/repo" \
+            -w /repo \
+            archlinux:base-devel \
+            bash -lc 'repo-add codex-personal.db.tar.gz *.pkg.tar.zst'
+
+          db_target=$(readlink dist/pacman-repo/codex-personal.db)
+          rm dist/pacman-repo/codex-personal.db
+          cp "dist/pacman-repo/${db_target}" dist/pacman-repo/codex-personal.db
+
+      - name: Publish personal pacman repository
         if: steps.meta.outputs.skipped != 'true'
         env:
-          AUR_SSH_PRIVATE_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          if [ "${AUR_PUBLISH_ENABLED}" != "true" ]; then
-            echo "AUR publish not enabled; skipping"
-            exit 0
+          if ! gh release view pacman-repo >/dev/null 2>&1; then
+            gh release create pacman-repo \
+              --prerelease \
+              --title "Personal pacman repository" \
+              --notes "Stable pacman repository for this fork."
           fi
 
-          if [ -z "${AUR_SSH_PRIVATE_KEY}" ]; then
-            echo "AUR SSH key missing; skipping"
-            exit 0
-          fi
+          gh api "repos/${GITHUB_REPOSITORY}/releases/tags/pacman-repo" \
+            --jq '.assets[] | select(.name | endswith(".pkg.tar.zst")) | .id' |
+            while read -r asset_id; do
+              gh api --method DELETE "repos/${GITHUB_REPOSITORY}/releases/assets/${asset_id}"
+            done
 
-          install -dm700 ~/.ssh
-          printf '%s\n' "${AUR_SSH_PRIVATE_KEY}" > ~/.ssh/aur
-          chmod 600 ~/.ssh/aur
-          touch ~/.ssh/known_hosts
-          for attempt in 1 2 3 4 5; do
-            if ssh-keyscan aur.archlinux.org >> ~/.ssh/known_hosts 2>/dev/null; then
-              break
-            fi
-
-            if [ "$attempt" -eq 5 ]; then
-              echo "Failed to fetch AUR host key"
-              exit 1
-            fi
-
-            sleep 2
-          done
-
-          export GIT_SSH_COMMAND="ssh -i ~/.ssh/aur -o IdentitiesOnly=yes"
-          git clone "ssh://aur@aur.archlinux.org/${{ steps.meta.outputs.aur_package_name }}.git" aur-prod
-          cp "${{ steps.meta.outputs.pkgbuild }}" aur-prod/PKGBUILD
-          cp "${{ steps.meta.outputs.srcinfo }}" aur-prod/.SRCINFO
-          cp "${{ steps.meta.outputs.install_script }}" "aur-prod/${{ steps.meta.outputs.aur_package_name }}.install"
-
-          git -C aur-prod config user.name "codex-app-linux bot"
-          git -C aur-prod config user.email "zero@composer.group"
-          git -C aur-prod add PKGBUILD .SRCINFO "${{ steps.meta.outputs.aur_package_name }}.install"
-
-          if git -C aur-prod diff --cached --quiet; then
-            echo "AUR package already current; skipping"
-            exit 0
-          fi
-
-          git -C aur-prod commit -m "Update to ${{ steps.meta.outputs.package_version }}"
-          git -C aur-prod push origin HEAD
+          gh release upload pacman-repo \
+            dist/pacman-repo/codex-personal.db \
+            dist/pacman-repo/*.pkg.tar.zst \
+            --clobber
 
   publish-beta:
     needs: [preflight, canary]
@@ -296,12 +275,9 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-      id-token: write
     env:
-      NPM_CONFIG_PROVENANCE: "true"
       NPM_PACKAGE_NAME: "codex-app-linux"
       CODEX_RELEASE_REPO: "${{ github.repository }}"
-      AUR_PUBLISH_ENABLED: "${{ vars.AUR_PUBLISH_ENABLED || '' }}"
     steps:
       - uses: actions/checkout@v5
 
@@ -309,7 +285,6 @@ jobs:
         with:
           node-version: 24
           cache: npm
-          registry-url: https://registry.npmjs.org
 
       - name: Install system deps
         run: sudo apt-get update && sudo apt-get install -y p7zip-full jq libarchive-tools xvfb x11-utils
@@ -336,7 +311,6 @@ jobs:
         run: |
           json="dist/beta-release.json"
           echo "skipped=$(jq -r '.skipped // false' "$json")" >> "$GITHUB_OUTPUT"
-          echo "package_dir=$(jq -r '.packageDir // ""' "$json")" >> "$GITHUB_OUTPUT"
           echo "appimage=$(jq -r '.appImagePath // ""' "$json")" >> "$GITHUB_OUTPUT"
           echo "tarball=$(jq -r '.unpackedTarballPath // ""' "$json")" >> "$GITHUB_OUTPUT"
           echo "icon=$(jq -r '.iconAssetPath // ""' "$json")" >> "$GITHUB_OUTPUT"
@@ -345,7 +319,6 @@ jobs:
           echo "srcinfo=$(jq -r '.aurPackage.srcinfoPath // ""' "$json")" >> "$GITHUB_OUTPUT"
           echo "install_script=$(jq -r '.aurPackage.installPath // ""' "$json")" >> "$GITHUB_OUTPUT"
           echo "aur_package_name=$(jq -r '.aurPackage.pkgname // ""' "$json")" >> "$GITHUB_OUTPUT"
-          echo "aur_url=$(jq -r '.aurPackage.aurUrl // ""' "$json")" >> "$GITHUB_OUTPUT"
           echo "release_tag=$(jq -r '.releaseTag // ""' "$json")" >> "$GITHUB_OUTPUT"
           echo "package_version=$(jq -r '.packageVersion' "$json")" >> "$GITHUB_OUTPUT"
           echo "prerelease=$(jq -r '.prerelease // false' "$json")" >> "$GITHUB_OUTPUT"
@@ -364,17 +337,7 @@ jobs:
           node scripts/release-notes.mjs \
             --channel "beta" \
             --package-version "${{ steps.meta.outputs.package_version }}" \
-            --aur-package-name "${{ steps.meta.outputs.aur_package_name }}" \
             > dist/beta-release-notes.md
-
-      - name: Refuse immutable npm version overwrite
-        if: steps.meta.outputs.skipped != 'true'
-        run: |
-          if npm view "codex-app-linux@${{ steps.meta.outputs.package_version }}" version >/dev/null 2>&1; then
-            echo "::error::npm package version already exists; refusing to clobber matching GitHub release assets"
-            echo "::error::bump CODEX_PACKAGE_REVISION before rebuilding this version"
-            exit 1
-          fi
 
       - name: Upload workflow artifacts
         if: steps.meta.outputs.skipped != 'true'
@@ -415,63 +378,3 @@ jobs:
             "${{ steps.meta.outputs.icon }}" \
             "${{ steps.meta.outputs.checksums }}" \
             --clobber
-
-      - name: Publish npm package
-        if: steps.meta.outputs.skipped != 'true'
-        run: |
-          if npm view "codex-app-linux@${{ steps.meta.outputs.package_version }}" version >/dev/null 2>&1; then
-            echo "npm package version already exists; skipping publish"
-            exit 0
-          fi
-
-          npm publish "${{ steps.meta.outputs.package_dir }}" --provenance --access public --tag beta
-
-      - name: Publish AUR package
-        if: steps.meta.outputs.skipped != 'true'
-        env:
-          AUR_SSH_PRIVATE_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
-        run: |
-          if [ "${AUR_PUBLISH_ENABLED}" != "true" ]; then
-            echo "AUR publish not enabled; skipping"
-            exit 0
-          fi
-
-          if [ -z "${AUR_SSH_PRIVATE_KEY}" ]; then
-            echo "AUR SSH key missing; skipping"
-            exit 0
-          fi
-
-          install -dm700 ~/.ssh
-          printf '%s\n' "${AUR_SSH_PRIVATE_KEY}" > ~/.ssh/aur
-          chmod 600 ~/.ssh/aur
-          touch ~/.ssh/known_hosts
-          for attempt in 1 2 3 4 5; do
-            if ssh-keyscan aur.archlinux.org >> ~/.ssh/known_hosts 2>/dev/null; then
-              break
-            fi
-
-            if [ "$attempt" -eq 5 ]; then
-              echo "Failed to fetch AUR host key"
-              exit 1
-            fi
-
-            sleep 2
-          done
-
-          export GIT_SSH_COMMAND="ssh -i ~/.ssh/aur -o IdentitiesOnly=yes"
-          git clone "ssh://aur@aur.archlinux.org/${{ steps.meta.outputs.aur_package_name }}.git" aur-beta
-          cp "${{ steps.meta.outputs.pkgbuild }}" aur-beta/PKGBUILD
-          cp "${{ steps.meta.outputs.srcinfo }}" aur-beta/.SRCINFO
-          cp "${{ steps.meta.outputs.install_script }}" "aur-beta/${{ steps.meta.outputs.aur_package_name }}.install"
-
-          git -C aur-beta config user.name "codex-app-linux bot"
-          git -C aur-beta config user.email "zero@composer.group"
-          git -C aur-beta add PKGBUILD .SRCINFO "${{ steps.meta.outputs.aur_package_name }}.install"
-
-          if git -C aur-beta diff --cached --quiet; then
-            echo "AUR package already current; skipping"
-            exit 0
-          fi
-
-          git -C aur-beta commit -m "Update to ${{ steps.meta.outputs.package_version }}"
-          git -C aur-beta push origin HEAD
