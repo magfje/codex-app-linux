@@ -3,15 +3,17 @@ import process from "node:process";
 import fs from "node:fs/promises";
 
 import { fetchAppcastMetadata } from "./lib/appcast.mjs";
-import { buildChannel, npmVersionExists } from "./lib/build.mjs";
+import { buildChannel } from "./lib/build.mjs";
 import {
   defaultLauncherCommand,
   defaultPackageName,
   defaultReleaseRepo,
   getChannel,
   npmVersionFor,
-  parseArgs
+  parseArgs,
+  releaseTagForVersion
 } from "./lib/config.mjs";
+import { githubReleaseExists } from "./lib/github-release.mjs";
 
 const args = parseArgs(process.argv.slice(2));
 const channelName = String(args.channel || "");
@@ -39,7 +41,10 @@ const upstream = await fetchAppcastMetadata(channel.appcastUrl);
 const packageVersion = npmVersionFor(channel.name, upstream);
 
 if (!force && !archiveOverride) {
-  const alreadyPublished = await npmVersionExists(packageName, packageVersion);
+  const alreadyPublished = await githubReleaseExists({
+    repo: releaseRepo,
+    tag: releaseTagForVersion(packageVersion)
+  });
 
   if (alreadyPublished) {
     const summary = {
@@ -47,7 +52,7 @@ if (!force && !archiveOverride) {
       packageName,
       packageVersion,
       skipped: true,
-      reason: "already-published"
+      reason: "github-release-already-published"
     };
 
     if (jsonOutputPath) {
