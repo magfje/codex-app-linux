@@ -35,10 +35,10 @@ const skippedBundledPluginNames = new Set(["computer-use", "latex", "latex-tecto
 const primaryRuntime = {
   url:
     process.env.CODEX_PRIMARY_RUNTIME_URL ||
-    "https://persistent.oaistatic.com/codex-primary-runtime/26.426.12240/codex-primary-runtime-linux-x64-26.426.12240.tar.xz",
+    "https://persistent.oaistatic.com/codex-primary-runtime/26.709.11516/codex-primary-runtime-linux-x64-26.709.11516.tar.xz",
   sha256:
     process.env.CODEX_PRIMARY_RUNTIME_SHA256 ||
-    "db5624eb6efa36b66ec6f6dd0488cefb966e49636862aab6209a4336c1ca90c4",
+    "bb7812cb913a7db4f04eb85b8beb2fdb84f42983f9abb1c750ed564bce8a4159",
   nodeEntry: "codex-primary-runtime/dependencies/node/bin/node",
   nodeReplEntry: "codex-primary-runtime/dependencies/bin/node_repl"
 };
