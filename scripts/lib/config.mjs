@@ -10,7 +10,7 @@ export const defaultPackageName =
 export const defaultLauncherCommand =
   process.env.CODEX_APP_COMMAND || "codex-app-linux";
 export const defaultReleaseRepo =
-  process.env.CODEX_RELEASE_REPO || "cau1k/codex-app-linux";
+  process.env.CODEX_RELEASE_REPO || "magfje/codex-app-linux";
 export const defaultPackageRevision = Number(
   process.env.CODEX_PACKAGE_REVISION || "34"
 );
