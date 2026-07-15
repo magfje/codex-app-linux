@@ -864,7 +864,14 @@ async function smokeWebShell({ linuxDir, packageDir, port }) {
 
   try {
     await waitForHttpOk(`http://127.0.0.1:${actualPort}/__webstrapper/healthz`, 30_000);
-    await smokeBrowserPage(`http://127.0.0.1:${actualPort}/`);
+    try {
+      await smokeBrowserPage(`http://127.0.0.1:${actualPort}/`);
+    } catch (error) {
+      throw new Error(
+        `${toErrorMessage(error)}; web server output: ${output().slice(-2_000) || "(none)"}`,
+        { cause: error }
+      );
+    }
     return {
       url: `http://127.0.0.1:${actualPort}/`
     };
@@ -893,9 +900,14 @@ async function smokeBrowserPage(url) {
   });
   const page = await browser.newPage();
   const fatalConsole = [];
+  const browserMessages = [];
 
   page.on("console", message => {
     const text = message.text();
+
+    if (message.type() === "error" || message.type() === "warning") {
+      browserMessages.push(`[console:${message.type()}] ${text}`);
+    }
 
     if (
       message.type() === "error" &&
@@ -905,7 +917,14 @@ async function smokeBrowserPage(url) {
     }
   });
   page.on("pageerror", error => {
-    fatalConsole.push(toErrorMessage(error));
+    const message = `[pageerror] ${toErrorMessage(error)}`;
+    browserMessages.push(message);
+    fatalConsole.push(message);
+  });
+  page.on("requestfailed", request => {
+    browserMessages.push(
+      `[requestfailed] ${request.url()}: ${request.failure()?.errorText || "unknown error"}`
+    );
   });
 
   try {
@@ -927,16 +946,45 @@ async function smokeBrowserPage(url) {
       const splashOnly = body?.children.length <= 2 && document.querySelector("svg") && text.trim().length < 20;
 
       return Boolean(interactive) || (text.trim().length > 20 && !splashOnly);
-    }, {
+    }, undefined, {
       timeout: 45_000
     });
 
     if (fatalConsole.length > 0) {
       throw new Error(`fatal browser console output: ${fatalConsole.slice(0, 5).join("\n")}`);
     }
+  } catch (error) {
+    throw new Error(
+      `${toErrorMessage(error)}; browser state: ${await describeBrowserPage(page, browserMessages)}`,
+      { cause: error }
+    );
   } finally {
     await browser.close();
   }
+}
+
+async function describeBrowserPage(page, browserMessages) {
+  let state;
+
+  try {
+    state = await page.evaluate(() => ({
+      url: window.location.href,
+      title: document.title,
+      readyState: document.readyState,
+      bodyText: (document.body?.innerText || "").trim().slice(0, 2_000),
+      bodyHtml: (document.body?.innerHTML || "").trim().slice(0, 2_000)
+    }));
+  } catch (error) {
+    state = {
+      inspectionError: toErrorMessage(error),
+      url: page.url()
+    };
+  }
+
+  return JSON.stringify({
+    ...state,
+    messages: browserMessages.slice(-20)
+  });
 }
 
 async function assertCommandSuccess(command, args, options = {}) {
