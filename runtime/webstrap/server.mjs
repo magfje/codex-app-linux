@@ -504,12 +504,16 @@ export function createAppHostModuleBody(rpcModulePath, webRoot) {
 const rpcModulePromise = import(${JSON.stringify(rpcModuleUrl)});
 
 function resolveCreateRpcPeer(rpcModule) {
-  return [rpcModule.tC, rpcModule.V, rpcModule.E, ...Object.values(rpcModule)].find((value) => {
-  if (typeof value !== "function") {
-    return false;
-  }
+  return [rpcModule.tC, rpcModule.V, rpcModule.E, rpcModule.Gk, ...Object.values(rpcModule)].find((value) => {
+    if (typeof value !== "function") {
+      return false;
+    }
 
-  return Function.prototype.toString.call(value).includes("getRemoteMain");
+    try {
+      return Function.prototype.toString.call(value).includes("getRemoteMain");
+    } catch {
+      return false;
+    }
   });
 }
 
