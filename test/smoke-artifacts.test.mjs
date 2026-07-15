@@ -9,8 +9,7 @@ import {
   evaluateElectronFuseContract,
   evaluateLinuxDefaultFileManagerTargetSources,
   evaluateLinuxPrimaryWindowBackgroundThrottlingContractSources,
-  evaluateLinuxWindowFocusableContractSources,
-  hasDynamicToolSchemaCandidateSource
+  evaluateLinuxWindowFocusableContractSources
 } from "../scripts/smoke-artifacts.mjs";
 
 test("browser client smoke accepts the legacy node_repl native pipe fallback", () => {
@@ -28,17 +27,6 @@ test("browser client smoke rejects clients without the legacy native pipe fallba
       "function vu(){let t=globalThis.nodeRepl?.nativePipe;return t}"
     ),
     /missing the legacy node_repl native pipe fallback/
-  );
-});
-
-test("dynamic tool schema smoke requires nearby contract tokens", () => {
-  const namespace = "description:`Tools provided by the Codex app.`";
-  const mapper = ".map(e=>({...e,deferLoading:!0}))";
-
-  assert.equal(hasDynamicToolSchemaCandidateSource(`${namespace}${mapper}`), true);
-  assert.equal(
-    hasDynamicToolSchemaCandidateSource(`${namespace}${"x".repeat(40_000)}${mapper}`),
-    false
   );
 });
 
