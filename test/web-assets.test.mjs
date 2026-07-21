@@ -123,6 +123,17 @@ test("createAppHostModuleBody resolves RPC peer constructor semantically", () =>
   assert.doesNotMatch(body, /import \{ E as createRpcPeer \}/);
 });
 
+test("createAppHostModuleBody exposes the current app update compatibility API", () => {
+  const body = createAppHostModuleBody(
+    "/tmp/codex-web/webview/assets/rpc-new.js",
+    "/tmp/codex-web/webview"
+  );
+
+  assert.match(body, /installUpdate\(\) \{\}/);
+  assert.match(body, /setSparkleQueryParams\(_queryParams\) \{\}/);
+  assert.match(body, /stateChanged\(callback\)/);
+});
+
 test("findAppHostRpcModulePath accepts upstream rpc facade layout", async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-app-linux-rpc-assets-"));
   const assetsDir = path.join(root, "assets");
